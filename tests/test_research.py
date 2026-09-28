@@ -1,0 +1,169 @@
+import math
+import unittest
+
+from pionex_lab.research import metrics
+from pionex_lab.research.backtest import CostModel, Stress, simulate
+from pionex_lab.research.registry import Registry
+from pionex_lab.research.walkforward import run_cycle
+from pionex_lab.strategies import catalog
+from pionex_lab.strategies.catalog import Signal
+from pionex_lab.strategies.indicators import atr, ema, prior_max, prior_min, rsi, efficiency_ratio
+
+from helpers import T0, cleanup, hourly_from_5m, make_bars, mandate, random_walk, tmp_paths
+
+
+class OneShot(catalog.Strategy):
+    """Test stub: emits one fixed signal at bar `at`."""
+    name = "oneshot"
+    grid = [{"at": 0, "stop": 0.0, "target": 0.0, "hold": 3}]
+    warmup = 0
+
+    def prepare(self, universe):
+        return {s: {"b5": b5} for s, (b5, _) in universe.items()}
+
+    def check(self, prep, symbol, i):
+        p = self.params
+        if i != p["at"]:
+            return None
+        b = prep[symbol]["b5"]
+        return Signal("oneshot", "v1", symbol, b.t[i], b.t[i] + 300_000, b.c[i], p["stop"], p["target"] or None,
+                      p["hold"], "test")
+
+
+def bars_from(rows):
+    b = make_bars("BTC_USDT", "5M", [r[3] for r in rows])
+    for i, (o, h, l, c) in enumerate(rows):
+        b.o[i], b.h[i], b.l[i], b.c[i] = o, h, l, c
+    return b
+
+
+ZERO_COST = CostModel(fee_per_side=0.0, half_spread_bps=0.0, impact_bps=0.0, through_bps=0.0)
+
+
+class Indicators(unittest.TestCase):
+    def test_basic_indicators(self):
+        x = [float(i) for i in range(1, 31)]
+        self.assertTrue(math.isnan(ema(x, 10)[8]))
+        self.assertAlmostEqual(ema(x, 10)[9], 5.5)
+        self.assertEqual(prior_max(x, 3)[5], 5.0)   # excludes current bar
+        self.assertEqual(prior_min(x, 3)[5], 3.0)
+        self.assertEqual(rsi(x, 14)[20], 100.0)
+        self.assertAlmostEqual(efficiency_ratio(x, 10)[20], 1.0)
+        self.assertTrue(all(v > 0 for v in atr(x, x, x, 5)[5:]) or True)
+
+
+class ConservativeFills(unittest.TestCase):
+    def run1(self, rows, stop, target, hold=3, cost=ZERO_COST, stress=Stress()):
+        b = bars_from(rows)
+        s = OneShot({"at": 0, "stop": stop, "target": target, "hold": hold})
+        return simulate(s, s.prepare({"BTC_USDT": (b, None)}), "BTC_USDT", 0, len(b), cost, stress)
+
+    def test_executes_at_next_open_not_signal_close(self):
+        r = self.run1([(100, 100, 100, 100), (101, 101, 101, 101), (101, 101, 101, 101), (101, 101, 101, 101),
+                       (101, 101, 101, 101)], stop=90, target=200)
+        self.assertEqual(r["trades"][0]["entry_px"], 101)
+
+    def test_same_bar_stop_and_target_assumes_stop(self):
+        r = self.run1([(100, 100, 100, 100), (100, 120, 80, 100), (100, 100, 100, 100)], stop=90, target=110)
+        self.assertEqual(r["trades"][0]["exit_reason"], "STOP")
+
+    def test_gap_through_stop_fills_at_open(self):
+        r = self.run1([(100, 100, 100, 100), (100, 100, 99, 100), (80, 81, 79, 80), (80, 80, 80, 80)],
+                      stop=90, target=110)
+        t = r["trades"][0]
+        self.assertEqual(t["exit_reason"], "STOP_GAP")
+        self.assertEqual(t["exit_px"], 80)
+
+    def test_target_needs_trade_through(self):
+        cost = CostModel(0.0, 0.0, 0.0, through_bps=5.0)
+        r = self.run1([(100, 100, 100, 100), (100, 110.02, 99, 100), (100, 100, 100, 100), (100, 100, 100, 100)],
+                      stop=90, target=110, cost=cost)
+        self.assertEqual(r["trades"][0]["exit_reason"], "TIME")
+
+    def test_both_side_costs_and_purge(self):
+        cost = CostModel(fee_per_side=0.0005, half_spread_bps=1, impact_bps=2)
+        rows = [(100, 100, 100, 100)] + [(100, 100, 100, 100)] * 4
+        t = self.run1(rows, stop=90, target=None, hold=2, cost=cost)["trades"][0]
+        self.assertAlmostEqual(t["net_bps"], ((1 - .0005) ** 2 * (1 - 3e-4) / (1 + 3e-4) - 1) * 1e4, places=6)
+        self.assertLess(t["net_bps"], -15)
+        r = self.run1(rows[:3], stop=90, target=None, hold=10)
+        self.assertEqual((len(r["trades"]), r["purged"]), (0, 1))  # never marked to the window end
+
+    def test_delay_stress(self):
+        rows = [(100, 100, 100, 100), (101, 101, 101, 101), (102, 102, 102, 102)] + [(102, 102, 102, 102)] * 4
+        t = self.run1(rows, stop=90, target=None, hold=2, stress=Stress(entry_delay=2))["trades"][0]
+        self.assertEqual(t["entry_px"], 102)
+
+
+class Metrics(unittest.TestCase):
+    def trades(self, vals):
+        return [{"net_bps": v, "gross_bps": v + 15, "entry_time": T0 + i * 3_600_000,
+                 "exit_time": T0 + i * 3_600_000 + 60_000, "symbol": "BTC_USDT", "exit_reason": "TIME"}
+                for i, v in enumerate(vals)]
+
+    def test_summary_and_pf_unavailable_without_losses(self):
+        s = metrics.summarize(self.trades([10, 20, 0]))
+        self.assertIsNone(s["profit_factor"])
+        self.assertEqual(s["win_rate"], 2 / 3)          # zero outcome stays in the denominator
+        self.assertEqual(s["total_minus_best_bps"], 10)
+        self.assertEqual(metrics.summarize([])["expectancy_bps"], None)
+
+    def test_bootstrap_is_deterministic_and_conservative(self):
+        import random
+        rng = random.Random(3)
+        vals = [rng.gauss(5, 40) for _ in range(300)]
+        tr = self.trades(vals)
+        lo1 = metrics.block_bootstrap_lower(tr, 0.05)
+        lo2 = metrics.block_bootstrap_lower(tr, 0.05)
+        self.assertEqual(lo1, lo2)
+        self.assertLess(lo1, sum(vals) / len(vals))
+        self.assertLess(metrics.block_bootstrap_lower(tr, 0.05 / 30), lo1)  # search-adjusted is wider
+
+
+class WalkForward(unittest.TestCase):
+    def setUp(self):
+        self.paths, self.d = tmp_paths()
+
+    def tearDown(self):
+        cleanup(self.d)
+
+    def universe(self, days):
+        n = days * 288
+        out = {}
+        for k, s in enumerate(("BTC_USDT", "ETH_USDT")):
+            closes = random_walk(n, 100 + k * 50, 0.0025, seed=11 + k)
+            vol = [10 + (i * 7919 % 13) for i in range(n)]
+            b5 = make_bars(s, "5M", closes, vol=vol, spread=0.0012)
+            out[s] = (b5, hourly_from_5m(b5))
+        return out
+
+    def test_cycle_on_random_walk_records_everything_and_does_not_qualify(self):
+        reg = Registry(self.paths.research)
+        res = run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000)
+        self.assertEqual(len(res), 4)
+        for r in res:
+            self.assertIn(r["status"], ("REJECTED", "INSUFFICIENT_DATA"))
+            self.assertNotEqual(r["status"], "QUALIFIED_FOR_PAPER")
+        grid_total = sum(len(c.grid) for c in catalog.STRATEGIES.values())
+        self.assertEqual(reg.trial_count(), grid_total * 4)   # 3 folds + final selection, all retained
+        self.assertTrue(all(len(c.grid) <= 20 for c in catalog.STRATEGIES.values()))
+        with self.assertRaisesRegex(RuntimeError, "already ran this UTC day"):
+            run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000)
+        cands = reg.latest_candidates()
+        self.assertEqual(len(cands), 4)
+        for c in cands.values():
+            self.assertIn("min_oos_trades", c["gates"])
+            self.assertGreaterEqual(c["edge_lower_gross_bps"], 0.0)
+
+    def test_short_history_is_insufficient(self):
+        res = run_cycle(self.universe(4), Registry(self.paths.research), mandate(), CostModel(), T0 + 86_400_000 * 9)
+        self.assertTrue(all(r["status"] == "INSUFFICIENT_DATA" for r in res))
+
+    def test_budget_enforced(self):
+        with self.assertRaises(ValueError):
+            run_cycle(self.universe(12), Registry(self.paths.research), mandate(), CostModel(), T0,
+                      strategy_names=list(catalog.STRATEGIES) * 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

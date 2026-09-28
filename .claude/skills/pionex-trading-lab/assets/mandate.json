@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "experiment": {
+    "name": "Pionex Trading Lab", "reporting_currency": "USD",
+    "timezone_display": "Africa/Johannesburg", "risk_period_timezone": "UTC",
+    "initial_capital": 100, "target_net_profit": 1000, "duration_days": 30,
+    "start_at": null, "end_at": null, "additional_deposits_allowed": false
+  },
+  "authority": {
+    "mode": "PAPER", "live_enabled": false, "authorization_record": null,
+    "account_scope": null, "approved_policy_hash": null, "canary_required": true
+  },
+  "risk": {
+    "spot_only": true, "leverage": 1,
+    "risk_per_trade_fraction": 0.005, "canary_risk_per_trade_fraction": 0.0025,
+    "portfolio_risk_fraction": 0.01,
+    "position_notional_fraction": 0.25, "canary_position_notional_fraction": 0.10,
+    "gross_exposure_fraction": 0.50, "max_positions": 2,
+    "daily_loss_fraction": 0.02, "weekly_loss_fraction": 0.04,
+    "peak_drawdown_fraction": 0.10, "absolute_experiment_loss_usd": 10,
+    "max_operating_cost_usd": 3, "paid_services_enabled": false,
+    "verified_exchange_protection_required": true,
+    "agent_may_raise_limits": false, "agent_may_withdraw_or_transfer": false
+  },
+  "qualification": {
+    "max_hypotheses_per_cycle": 5, "max_parameter_trials_per_hypothesis": 20,
+    "min_oos_trades": 200, "min_oos_days": 60, "min_walk_forward_folds": 3,
+    "min_net_profit_factor": 1.20,
+    "expectancy_confidence_lower_bound_must_exceed_zero": true,
+    "cost_stress_multiplier": 2,
+    "min_paper_hours": 72, "min_paper_trades": 50,
+    "min_canary_days": 7, "min_canary_trades": 30
+  },
+  "execution": {
+    "max_book_age_ms": 2000, "max_account_state_age_ms": 5000,
+    "max_entry_spread_bps": 10, "edge_cost_buffer_bps": 5,
+    "max_intraday_holding_hours": 4, "rest_weight_per_second_local_budget": 5,
+    "assumed_spot_fee_per_side_for_research_only": 0.0005,
+    "verified_fee_source": null, "allowed_symbols": [],
+    "protection_capability_report": null
+  }
+}

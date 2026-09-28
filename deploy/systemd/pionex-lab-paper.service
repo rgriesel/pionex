@@ -1,0 +1,23 @@
+[Unit]
+Description=Pionex Lab paper engine (simulated fills; dry-run order previews; never sends orders)
+After=network-online.target pionex-lab-collector.service
+Wants=pionex-lab-collector.service
+
+[Service]
+Type=simple
+User=pionex-lab
+Group=pionex-lab
+WorkingDirectory=/opt/pionex-lab
+Environment=PIONEX_LAB_VAR=/var/lib/pionex-lab
+ExecStart=/usr/bin/python3 -m pionex_lab paper
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/pionex-lab
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

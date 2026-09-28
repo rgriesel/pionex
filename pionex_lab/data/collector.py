@@ -32,6 +32,8 @@ class Collector:
         self._last_ok = None
         self._skew_ms = None
         self._schema_errors = 0
+        self.backfill_days = None
+        self.backfill_pending = set()   # (symbol, interval) whose backfill did not complete
 
     # -------------------------------------------------------------- helpers
     def _call(self, name: str, fn, *args, **kwargs):
@@ -87,7 +89,13 @@ class Collector:
             self.store.insert_depth(symbol, depth, env.server_ts, env.recv_ms)
         return depth
 
-    def poll_klines(self, symbol: str, interval: str, limit: int = 5):
+    def poll_klines(self, symbol: str, interval: str, limit: int | None = None):
+        if limit is None:
+            # Repair gaps after an outage: fetch every bar since the last stored one (max 500).
+            step = KLINE_INTERVALS[interval]
+            last = self.store.bars(symbol, interval, limit=1, complete_only=False)
+            missing = (self.clock.now_ms() - last.t[-1]) // step + 2 if len(last) else 500
+            limit = int(max(5, min(500, missing)))
         kl, env = self._call(f"klines:{symbol}:{interval}", self.client.klines, symbol, interval, None, limit)
         if kl is not None:
             self.store.upsert_klines(symbol, interval, kl, env.server_ts, env.recv_ms)
@@ -119,6 +127,10 @@ class Collector:
             if first <= target:
                 break
             end = first - 1  # endTime is inclusive in ms; request strictly older bars
+        if reason == "FETCH_ERROR":
+            self.backfill_pending.add((symbol, interval))
+        else:
+            self.backfill_pending.discard((symbol, interval))
         coverage = {"symbol": symbol, "interval": interval, "earliest_open_time": earliest, "target": target,
                     "pages": pages, "bars_received": total, "stop_reason": reason,
                     "bars_expected": int(days * 86_400_000 // step)}
@@ -139,6 +151,9 @@ class Collector:
                     self.poll_klines(s, iv)
         if self.depeg_symbol and self._due("depeg", self.poll["depeg_seconds"], now):
             self.poll_book(self.depeg_symbol)
+        if self.backfill_pending and self.backfill_days and self._due("backfill_retry", 600, now):
+            for s, iv in sorted(self.backfill_pending):
+                self.backfill(s, iv, self.backfill_days)
         if self._due("prune", 3600, now):
             self.store.prune(now)
         self.heartbeat()
@@ -152,6 +167,7 @@ class Collector:
             "ban_until": self.client.limiter.banned_until_ms}, now)
 
     def run(self, stop: threading.Event, backfill_days: float | None = None) -> None:
+        self.backfill_days = backfill_days
         self.refresh_symbols()
         if backfill_days:
             for s in self.symbols:

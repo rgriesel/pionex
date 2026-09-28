@@ -266,6 +266,23 @@ class Recovery(unittest.TestCase):
         self.h.fake.mode = "ok"
         self.assertEqual(len(self.h.fake.requests), n + 1)
 
+    def test_collector_repairs_gaps_and_retries_backfill(self):
+        eng = self.h.engine(stub=False)
+        self.h.fake.mode = "down"
+        self.h.run(eng, 45 * 60, step=30.0)                      # 45-minute outage
+        self.h.fake.mode = "ok"
+        self.h.run(eng, 60, step=2.0)
+        b5 = eng.market.bars("BTC_USDT", "5M", limit=300, end_ms=self.h.clock.now_ms())
+        from pionex_lab.data.quality import check_bars
+        self.assertEqual(check_bars(b5).missing_bars, 0)          # the gap was refilled
+        self.h.collector.backfill_days = 1
+        self.h.fake.mode = "down"
+        self.h.collector.backfill("ETH_USDT", "5M", 1)
+        self.assertIn(("ETH_USDT", "5M"), self.h.collector.backfill_pending)
+        self.h.fake.mode = "ok"
+        self.h.run(eng, 700, step=10.0)
+        self.assertNotIn(("ETH_USDT", "5M"), self.h.collector.backfill_pending)
+
     def test_unqualified_or_zero_edge_strategy_never_trades(self):
         eng = self.h.engine(edge="0", status="UNREGISTERED")
         self.h.run(eng, 20)

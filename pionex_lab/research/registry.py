@@ -5,7 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ..util import canonical_json, utc_day
+from ..util import canonical_json, ro_uri, utc_day
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -29,7 +29,7 @@ class Registry:
     def __init__(self, path: Path | str, readonly: bool = False):
         self.path = Path(path)
         if readonly:
-            self.conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, check_same_thread=False)
+            self.conn = sqlite3.connect(ro_uri(self.path), uri=True, check_same_thread=False)
         else:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.conn = sqlite3.connect(self.path, check_same_thread=False)

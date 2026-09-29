@@ -147,7 +147,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
 
     cands = registry.latest_candidates() if registry is not None else {}
     strategies = []
-    for name, cls in catalog.STRATEGIES.items():
+    for name, cls in catalog.ALL.items():
         key = f"{name}/{cls.version}"
         c = cands.get(key)
         mine = [p for _, p in closed if p.get("strategy_name") == name]
@@ -162,8 +162,11 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
                      if sh else " Shadow: no closed virtual trades yet.")
         params = c["params"] if c and c.get("params") else cls.grid[0]
         strategies.append({
-            "name": name.replace("_", " ").capitalize(), "version": f"{cls.version} · {params}"[:200],
-            "state": ("PAPER · " + (c["status"] if c else "UNREGISTERED"))[:200],
+            "name": (name[:-3].replace("_", " ").capitalize() + " (1h)" if name.endswith("_1h")
+                     else name.replace("_", " ").capitalize() + " (5m)"),
+            "version": f"{cls.version} · {params}"[:200],
+            "state": (("PAPER · " if name in catalog.STRATEGIES else "RESEARCH ONLY · ")
+                      + (c["status"] if c else "UNREGISTERED"))[:200],
             "closed_trades": len(mine),
             "net_pnl_usd": _f(sum((Decimal(p["net_pnl_usd"]) for p in mine), Decimal(0))) or 0.0,
             "change_note": "Frozen v1 baseline; no learned changes. Challenger versions require a matched forward test.",

@@ -11,7 +11,7 @@ import sqlite3
 from decimal import Decimal
 from pathlib import Path
 
-from ..util import canonical_json, sha256_bytes
+from ..util import canonical_json, ro_uri, sha256_bytes
 
 GENESIS = "0" * 64
 
@@ -50,7 +50,7 @@ class Journal:
         self.path = Path(path)
         self.readonly = readonly
         if readonly:
-            self.conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=10, check_same_thread=False)
+            self.conn = sqlite3.connect(ro_uri(self.path), uri=True, timeout=10, check_same_thread=False)
             self.conn.execute("PRAGMA query_only=ON")
         else:
             self.path.parent.mkdir(parents=True, exist_ok=True)

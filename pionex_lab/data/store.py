@@ -13,7 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ..exchange.pionex_public import KLINE_INTERVALS, BookTicker, Depth, SymbolRules, parse_symbols
-from ..util import canonical_json
+from ..util import canonical_json, ro_uri
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS status(key TEXT PRIMARY KEY, value TEXT NOT NULL, upd
 def connect(path: Path | str, readonly: bool = False) -> sqlite3.Connection:
     path = Path(path)
     if readonly:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10, check_same_thread=False)
+        conn = sqlite3.connect(ro_uri(path), uri=True, timeout=10, check_same_thread=False)
         conn.execute("PRAGMA query_only=ON")
     else:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +82,32 @@ class Bars:
             b.c.append(float(r["close"]))
             b.v.append(float(r["volume"]))
         return b
+
+
+def resample(bars: Bars, interval: str) -> Bars:
+    """Aggregate completed bars into a coarser interval (e.g. 60M -> 4H). A target bar is
+    emitted only when every constituent bar is present, so gaps stay visible as gaps."""
+    step = KLINE_INTERVALS[interval]
+    base = bars.interval_ms
+    if step % base or step <= base:
+        raise ValueError(f"cannot resample {bars.interval} into {interval}")
+    need = step // base
+    out = Bars(bars.symbol, interval, [], [], [], [], [], [])
+    i = 0
+    while i < len(bars):
+        start = bars.t[i] - bars.t[i] % step
+        j = i
+        while j < len(bars) and bars.t[j] < start + step:
+            j += 1
+        if j - i == need and bars.t[i] == start:
+            out.t.append(start)
+            out.o.append(bars.o[i])
+            out.h.append(max(bars.h[i:j]))
+            out.l.append(min(bars.l[i:j]))
+            out.c.append(bars.c[j - 1])
+            out.v.append(sum(bars.v[i:j]))
+        i = j
+    return out
 
 
 class MarketView:

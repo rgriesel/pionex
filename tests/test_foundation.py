@@ -184,12 +184,29 @@ class DryRun(unittest.TestCase):
         cli = dryrun.find_official_cli()
         if not cli:
             self.skipTest("official pionex-trade-cli not installed (npm ci --prefix tools/pionex-cli)")
+        self.assertIsInstance(cli, list)             # argv prefix, e.g. [node, .../dist/index.js]
         req = dryrun.preview(self.rules, cli, side="SELL", type_="MARKET", client_order_id="pl-x-test",
                              size=Decimal("0.00123"))
         self.assertEqual(req["preview_source"], "official pionex-trade-cli --dry-run")
         req = dryrun.preview(self.rules, cli, side="BUY", type_="LIMIT", client_order_id="pl-e-test",
                              size=Decimal("0.0005"), price=Decimal("61000.5"), ioc=True)
         self.assertEqual(req["args"]["IOC"], True)
+
+
+class Portability(unittest.TestCase):
+    def test_read_only_uri_encodes_awkward_paths(self):
+        from pionex_lab.util import ro_uri
+        paths, d = tmp_paths()
+        try:
+            odd = paths.root / "dir with space#and?marks"
+            odd.mkdir()
+            j = Journal(odd / "ledger.db")
+            j.append("INCIDENT", {"x": 1}, T0)
+            j.close()
+            self.assertTrue(ro_uri(odd / "ledger.db").startswith("file:///"))
+            self.assertEqual(Journal(odd / "ledger.db", readonly=True).count(), 1)
+        finally:
+            cleanup(d)
 
 
 class Limiter(unittest.TestCase):

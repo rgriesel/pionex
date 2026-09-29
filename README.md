@@ -63,8 +63,9 @@ on restart.
 
 What happens on first start:
 
-1. The collector backfills 150 days of 5-minute and 1-hour candles for BTC_USDT and ETH_USDT
-   (about 200 requests at the 5 requests/second local budget), then polls book tickers every 1s,
+1. The collector backfills up to 150 days of 5-minute and 1-hour candles for BTC_USDT and ETH_USDT
+   (5-minute history stops at Pionex's ~35-day limit; about 60 requests at the 5 requests/second
+   local budget), then polls book tickers every 1s,
    depth every 3s, and candles every 20s. Failed backfills are retried every 10 minutes, and gaps
    after outages are refilled.
 2. The paper engine enters `PAPER`. It starts the 30-day experiment clock only after all feeds are
@@ -77,8 +78,8 @@ What happens on first start:
    python3 -m pionex_lab research --timeframe 1h    # hourly strategies (use a different UTC day)
    ```
 
-   Pionex serves only ~35 days of 5-minute candles but much longer hourly history, so the hourly
-   variants (same ideas and frozen grids on 1-hour candles with 4-hour context, holding at most
+   Pionex serves about 10,000 candles per interval: ~35 days of 5-minute candles but ~417 days of
+   hourly candles, so the hourly variants (same ideas and frozen grids on 1-hour candles with 4-hour context, holding at most
    4 hours) can reach the 60-day out-of-sample requirement from existing history. Hourly variants
    are research-only for now; the paper engine trades the 5-minute set.
 

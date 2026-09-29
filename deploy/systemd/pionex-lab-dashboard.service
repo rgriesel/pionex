@@ -1,0 +1,23 @@
+[Unit]
+Description=Pionex Lab read-only dashboard (127.0.0.1 only; put a TLS proxy in front for remote access)
+After=pionex-lab-paper.service
+
+[Service]
+Type=simple
+User=pionex-lab
+Group=pionex-lab
+WorkingDirectory=/opt/pionex-lab
+Environment=PIONEX_LAB_VAR=/var/lib/pionex-lab
+ExecStart=/usr/bin/python3 -m pionex_lab serve --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# Needs write access only for the one-time token file and SQLite WAL shared memory.
+ReadWritePaths=/var/lib/pionex-lab
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

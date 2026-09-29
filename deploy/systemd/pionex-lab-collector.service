@@ -1,0 +1,24 @@
+[Unit]
+Description=Pionex Lab market-data collector (public endpoints only, no credentials)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pionex-lab
+Group=pionex-lab
+# Code and config/mandate.* are root-owned and read-only for the service user.
+WorkingDirectory=/opt/pionex-lab
+Environment=PIONEX_LAB_VAR=/var/lib/pionex-lab
+ExecStart=/usr/bin/python3 -m pionex_lab collect
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/pionex-lab
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

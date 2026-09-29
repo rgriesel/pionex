@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pionex-lab"
+version = "0.1.0"
+description = "Bounded Pionex spot-trading research and paper-trading lab (paper only; live disabled)"
+requires-python = ">=3.11"
+dependencies = []  # standard library only, by design
+
+[project.scripts]
+pionex-lab = "pionex_lab.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pionex_lab*"]

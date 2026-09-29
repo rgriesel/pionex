@@ -1,0 +1,22 @@
+{
+  "base_url": "https://api.pionex.com",
+  "research_universe": ["BTC_USDT", "ETH_USDT"],
+  "depeg_monitor_symbol": "USDC_USDT",
+  "bar_intervals": ["5M", "60M"],
+  "backfill_days": 150,
+  "poll": {
+    "book_seconds": 1.0,
+    "depth_seconds": 3.0,
+    "depth_levels": 20,
+    "klines_seconds": 20.0,
+    "symbols_seconds": 3600.0,
+    "depeg_seconds": 60.0
+  },
+  "engine": {
+    "loop_seconds": 1.0,
+    "snapshot_seconds": 60.0,
+    "report_seconds": 60.0,
+    "shadow_notional_usd": 10.0
+  },
+  "dashboard": {"host": "127.0.0.1", "port": 8765, "poll_seconds": 10}
+}

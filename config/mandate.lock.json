@@ -1,0 +1,8 @@
+{
+  "mandate_file": "mandate.v1.json",
+  "schema_version": 1,
+  "sha256": "04c392230697c2dfb046e706ad6052452c608cedb18864b13609713b4190eeac",
+  "dated": "2026-09-28",
+  "source": "pionex-trading-lab skill assets/mandate.json (handoff export created 2026-09-28T20:07:11Z)",
+  "note": "Changing the mandate requires a new dated file, a new lock, and a reviewed mandate decision recorded outside the agent. The runtime latches POLICY_TAMPER if the mandate hash differs from this lock or from the hash journaled at experiment start."
+}

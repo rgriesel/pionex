@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(**/config/mandate.v1.json)",
+      "Write(**/config/mandate.v1.json)",
+      "Edit(**/config/mandate.lock.json)",
+      "Write(**/config/mandate.lock.json)",
+      "Edit(**/pionex-trading-lab/assets/mandate.json)",
+      "Write(**/pionex-trading-lab/assets/mandate.json)",
+      "Read(**/secrets/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Bash(python3 -m pionex_lab review-latch:*)",
+      "Bash(python -m pionex_lab review-latch:*)",
+      "Bash(pionex-lab review-latch:*)"
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+name: pionex-public-data
+
+# Manual only. Probes Pionex PUBLIC market-data endpoints, backfills candles, and runs one
+# walk-forward research cycle. No credentials, no order endpoints, no paper engine (CI is not a
+# persistent host). Results are uploaded as an artifact for inspection.
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: "Days of 5M/60M history to backfill"
+        default: "150"
+      run_research:
+        description: "Run one research cycle after backfill"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime state directory
+        run: echo "PIONEX_LAB_VAR=$RUNNER_TEMP/var" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Initialise runtime state
+        run: python -m pionex_lab init
+      - name: Capability probe (public endpoints)
+        run: python -m pionex_lab capability
+      - name: Backfill candles
+        run: python -m pionex_lab collect --backfill-only --backfill-days "${{ inputs.backfill_days }}"
+      - name: Data summary
+        run: python -m pionex_lab status
+      - name: Research cycle
+        if: ${{ inputs.run_research }}
+        run: python -m pionex_lab research --note "CI public-data cycle"
+      - name: Export report snapshot
+        if: always()
+        run: python -m pionex_lab report --out "$PIONEX_LAB_VAR/report.json" || true
+      - name: Remove dashboard token before upload
+        if: always()
+        run: rm -f "$PIONEX_LAB_VAR/dashboard.token"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pionex-public-data
+          path: |
+            ${{ runner.temp }}/var/capability
+            ${{ runner.temp }}/var/research.db
+            ${{ runner.temp }}/var/report.json
+          retention-days: 14

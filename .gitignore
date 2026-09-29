@@ -1,0 +1,17 @@
+# Runtime state, ledgers, market data, logs, tokens (never commit)
+var/
+*.db
+*.db-wal
+*.db-shm
+# Secrets must live in a server-side secret store, never in the repo
+.env
+.env.*
+secrets/
+*.key
+*.pem
+# Python / tooling
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+node_modules/

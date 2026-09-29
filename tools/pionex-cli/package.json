@@ -1,0 +1,8 @@
+{
+  "name": "pionex-lab-official-cli",
+  "private": true,
+  "description": "Pinned official Pionex AI Kit CLI, used ONLY for `orders new --dry-run` previews of paper orders (no credentials, no network).",
+  "dependencies": {
+    "@pionex/pionex-ai-kit": "0.2.55"
+  }
+}

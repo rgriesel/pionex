@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install pinned official Pionex CLI (dry-run previews only; no credentials)
+        run: npm ci --prefix tools/pionex-cli --ignore-scripts
+      - name: Skill risk tests
+        run: python -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v
+      - name: Project tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify skill hashes, vendored gate, mandate lock
+        run: python -m pionex_lab --var "$RUNNER_TEMP/var" verify
+      - name: Dashboard is generated from the skill template
+        run: |
+          python tools/build_dashboard.py
+          git diff --exit-code dashboard/index.html

@@ -18,7 +18,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ..mandate import Mandate, PolicyError, load_mandate
-from ..util import canonical_json, utc_day, utc_week
+from ..util import canonical_json, ro_uri, utc_day, utc_week
 from .risk_gate_ref import evaluate as reference_evaluate
 
 TRANSIENT = {"DATA_STALE", "CLOCK_SKEW", "RECONCILE_PENDING", "QUOTE_DEPEG", "COLLECTOR_DOWN"}
@@ -373,7 +373,7 @@ class RiskView:
 
     def __init__(self, mandate: Mandate, path: Path | str):
         self.mandate = mandate
-        self.conn = sqlite3.connect(f"file:{Path(path)}?mode=ro", uri=True, check_same_thread=False)
+        self.conn = sqlite3.connect(ro_uri(Path(path)), uri=True, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA query_only=ON")
         self.initial = mandate.initial_capital

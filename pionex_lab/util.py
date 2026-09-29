@@ -125,5 +125,10 @@ class FakeClock:
         self.t += int(round(seconds * 1000))
 
 
+def ro_uri(path) -> str:
+    """Read-only SQLite URI that is valid on Windows drive paths and paths with spaces, # or ?."""
+    return Path(path).resolve().as_uri() + "?mode=ro"
+
+
 def load_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))

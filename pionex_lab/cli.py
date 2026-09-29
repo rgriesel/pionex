@@ -181,28 +181,43 @@ def cmd_collect(args, paths, cfg, mandate):
     return 0
 
 
-def _universe_bars(paths, cfg):
-    from .data.store import MarketView
+def _universe_bars(paths, cfg, timeframe="5m"):
+    from .data.store import MarketView, resample
+    from .strategies.catalog import TIMEFRAMES
+    base, context, _ = TIMEFRAMES[timeframe]
     mv = MarketView(paths.market)
-    return {s: (mv.bars(s, "5M"), mv.bars(s, "60M")) for s in cfg["research_universe"]}, mv
+    out = {}
+    for s in cfg["research_universe"]:
+        b = mv.bars(s, base)
+        ctx = resample(b, context) if context == "4H" else mv.bars(s, context)
+        out[s] = (b, ctx)
+    return out, mv
 
 
 def cmd_research(args, paths, cfg, mandate):
     from .research.backtest import CostModel
     from .research.registry import Registry
-    from .research.walkforward import run_cycle
+    from .research.walkforward import DailyBudgetSpent, run_cycle
     paths.ensure()
-    universe, mv = _universe_bars(paths, cfg)
+    from .strategies.catalog import TIMEFRAMES
+    universe, mv = _universe_bars(paths, cfg, args.timeframe)
     now = SystemClock().now_ms()
     spreads = [mv.median_spread_bps(s, now - 7 * 86_400_000) for s in universe]
     spreads = [x for x in spreads if x is not None]
     half_spread = max(1.0, max(spreads) / 2) if spreads else 1.0
     cost = CostModel(fee_per_side=float(mandate.fee_per_side), half_spread_bps=half_spread)
-    print(f"bars: " + ", ".join(f"{s} 5M={len(b5)} 60M={len(b60)}" for s, (b5, b60) in universe.items()))
+    base, context, names = TIMEFRAMES[args.timeframe]
+    print(f"timeframe {args.timeframe}: " + ", ".join(f"{s} {base}={len(b)} {context}={len(c)}"
+                                                     for s, (b, c) in universe.items()))
     print(f"cost model: fee {cost.fee_per_side:.4%}/side, half-spread {half_spread:.2f} bps "
           f"({'observed median' if spreads else 'default; no book ticks yet'}), impact {cost.impact_bps} bps")
-    results = run_cycle(universe, Registry(paths.research), mandate, cost, now,
-                        enforce_daily_limit=not args.allow_second_cycle_for_tests, note=args.note or "")
+    try:
+        results = run_cycle(universe, Registry(paths.research), mandate, cost, now, strategy_names=list(names),
+                            enforce_daily_limit=not args.allow_second_cycle_for_tests, note=args.note or "",
+                            timeframe=args.timeframe)
+    except DailyBudgetSpent as exc:
+        print(f"SKIPPED: {exc}. Run again after 00:00 UTC.")
+        return 0
     for r in results:
         print(json.dumps(r, default=str))
     return 0
@@ -416,7 +431,9 @@ def main(argv=None) -> int:
     p.add_argument("--backfill-days", type=float)
     p.add_argument("--no-backfill", action="store_true")
     p.add_argument("--backfill-only", action="store_true")
-    p = sub.add_parser("research", help="run one walk-forward qualification cycle (max one per UTC day)")
+    p = sub.add_parser("research", help="run one walk-forward qualification cycle (max one per UTC day per timeframe)")
+    p.add_argument("--timeframe", choices=["5m", "1h"], default="5m",
+                   help="5m: 5-minute candles with 1h context; 1h: 1-hour candles with 4h context")
     p.add_argument("--note")
     p.add_argument("--allow-second-cycle-for-tests", action="store_true", help=argparse.SUPPRESS)
     p = sub.add_parser("paper", help="run the paper engine")

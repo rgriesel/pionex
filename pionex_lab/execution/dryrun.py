@@ -27,7 +27,9 @@ from ..util import PROJECT_ROOT
 
 ORDER_PATH = "/api/v1/trade/order"
 TOOL_NAME = "pionex_orders_new_order"
-PINNED_CLI = PROJECT_ROOT / "tools" / "pionex-cli" / "node_modules" / ".bin" / "pionex-trade-cli"
+# The pinned package's JS entry point, run with `node` directly so it works the same on
+# Windows (where npm's .bin shims are .cmd files) and on macOS/Linux.
+PINNED_CLI_JS = PROJECT_ROOT / "tools" / "pionex-cli" / "node_modules" / "@pionex" / "pionex-ai-kit" / "dist" / "index.js"
 
 
 class DryRunError(ValueError):
@@ -93,18 +95,27 @@ def build_order_request(rules: SymbolRules, side: str, type_: str, client_order_
     return {"tool": TOOL_NAME, "method": "POST", "path": ORDER_PATH, "args": body, "sent": False}
 
 
-def find_official_cli(explicit: str | None = None) -> str | None:
-    for candidate in (explicit, os.environ.get("PIONEX_TRADE_CLI"), str(PINNED_CLI)):
-        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
-            return candidate
-    return shutil.which("pionex-trade-cli")
+def find_official_cli(explicit: str | None = None) -> list | None:
+    """Command prefix (argv list) that runs the official CLI, or None if unavailable."""
+    for candidate in (explicit, os.environ.get("PIONEX_TRADE_CLI")):
+        if candidate and Path(candidate).is_file():
+            if candidate.endswith(".js"):
+                node = shutil.which("node")
+                return [node, candidate] if node else None
+            if os.access(candidate, os.X_OK):
+                return [candidate]
+    node = shutil.which("node")
+    if node and PINNED_CLI_JS.is_file():
+        return [node, str(PINNED_CLI_JS)]
+    found = shutil.which("pionex-trade-cli")
+    return [found] if found else None
 
 
-def official_cli_preview(request: dict, cli: str, timeout_s: float = 20.0) -> dict:
+def official_cli_preview(request: dict, cli: list, timeout_s: float = 20.0) -> dict:
     """Run the official CLI's dry-run for the same order and return its JSON."""
     a = request["args"]
-    argv = [cli, "--read-only", "orders", "new", "--symbol", a["symbol"], "--side", a["side"], "--type", a["type"],
-            "--client-order-id", a["clientOrderId"]]
+    argv = list(cli) + ["--read-only", "orders", "new", "--symbol", a["symbol"], "--side", a["side"],
+                        "--type", a["type"], "--client-order-id", a["clientOrderId"]]
     for key, flag in (("size", "--size"), ("price", "--price"), ("amount", "--amount")):
         if key in a:
             argv += [flag, a[key]]
@@ -113,7 +124,7 @@ def official_cli_preview(request: dict, cli: str, timeout_s: float = 20.0) -> di
     argv.append("--dry-run")
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("PIONEX")}
     with tempfile.TemporaryDirectory(prefix="pionex-dryrun-") as home:
-        env["HOME"] = home  # no ~/.pionex/config.toml can be read
+        env["HOME"] = env["USERPROFILE"] = home  # no ~/.pionex/config.toml can be read (POSIX or Windows)
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
     if proc.returncode != 0:
         raise DryRunError(f"OFFICIAL_CLI_FAILED: {proc.stderr.strip()[:300]}")
@@ -123,7 +134,7 @@ def official_cli_preview(request: dict, cli: str, timeout_s: float = 20.0) -> di
         raise DryRunError("OFFICIAL_CLI_OUTPUT_NOT_JSON") from exc
 
 
-def preview(rules: SymbolRules, cli: str | None, **order) -> dict:
+def preview(rules: SymbolRules, cli: list | None, **order) -> dict:
     """Build the request, cross-check with the official CLI when available."""
     req = build_order_request(rules, **order)
     if cli:

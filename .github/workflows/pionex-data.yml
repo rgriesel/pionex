@@ -2,12 +2,18 @@ name: pionex-public-data
 
 # Manual only. Probes Pionex PUBLIC market-data endpoints, backfills candles, and runs one
 # walk-forward research cycle. No credentials, no order endpoints, no paper engine (CI is not a
-# persistent host). Results are uploaded as an artifact for inspection.
+# persistent host). The research registry is carried between runs in the Actions cache so the
+# mandate's one-cycle-per-UTC-day search budget and the full trial history hold across runs.
 on:
   workflow_dispatch:
     inputs:
+      timeframe:
+        description: "Strategy timeframe: 5m (5-minute candles) or 1h (1-hour candles)"
+        type: choice
+        options: ["5m", "1h"]
+        default: "5m"
       backfill_days:
-        description: "Days of 5M/60M history to backfill"
+        description: "Days of history to backfill (Pionex caps 5-minute history at ~35 days)"
         default: "150"
       run_research:
         description: "Run one research cycle after backfill"
@@ -20,7 +26,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Runtime state directory
@@ -28,6 +34,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Restore research registry
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/var/research.db
+          key: research-registry-${{ github.run_id }}
+          restore-keys: research-registry-
       - name: Initialise runtime state
         run: python -m pionex_lab init
       - name: Capability probe (public endpoints)
@@ -38,10 +50,35 @@ jobs:
         run: python -m pionex_lab status
       - name: Research cycle
         if: ${{ inputs.run_research }}
-        run: python -m pionex_lab research --note "CI public-data cycle"
+        run: |
+          python -m pionex_lab research --timeframe "${{ inputs.timeframe }}" --note "CI public-data cycle" \
+            | tee "$RUNNER_TEMP/research.out"
+          python - "$RUNNER_TEMP/research.out" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          lines = open(sys.argv[1]).read().splitlines()
+          print("## Research cycle\n")
+          print("\n".join(l for l in lines if not l.startswith("{")) + "\n")
+          rows = [json.loads(l) for l in lines if l.startswith("{")]
+          if rows:
+              print("| Strategy | Status | OOS trades | Net / trade (bps) | Failed gates |")
+              print("|---|---|---:|---:|---|")
+              for r in rows:
+                  e = r.get("expectancy_bps")
+                  print(f"| {r['strategy']} | {r['status']} | {r.get('oos_trades', '')} | "
+                        f"{'' if e is None else f'{e:.1f}'} | {', '.join(r.get('failed_gates') or []) or '-'} |")
+          PY
+      - name: Save research registry
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/var/research.db
+          key: research-registry-${{ github.run_id }}
       - name: Export report snapshot
         if: always()
-        run: python -m pionex_lab report --out "$PIONEX_LAB_VAR/report.json" || true
+        run: |
+          python -m pionex_lab report --out "$PIONEX_LAB_VAR/report.json" || true
+          echo "----- report.json -----"
+          cat "$PIONEX_LAB_VAR/report.json" || true
       - name: Remove dashboard token before upload
         if: always()
         run: rm -f "$PIONEX_LAB_VAR/dashboard.token"
@@ -53,4 +90,4 @@ jobs:
             ${{ runner.temp }}/var/capability
             ${{ runner.temp }}/var/research.db
             ${{ runner.temp }}/var/report.json
-          retention-days: 14
+          retention-days: 30

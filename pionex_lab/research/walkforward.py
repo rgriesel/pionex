@@ -31,6 +31,10 @@ MAX_MISSING_FRACTION = 0.001
 MAX_GAP_BARS = 6
 
 
+class DailyBudgetSpent(RuntimeError):
+    """One research cycle (<= 5 hypotheses) per UTC day, across all timeframes."""
+
+
 def code_hash() -> str:
     h = hashlib.sha256()
     for mod in (catalog, indicators, backtest, metrics):
@@ -78,17 +82,20 @@ def _gate(passed, value, threshold, note=""):
 
 
 def run_cycle(universe: dict, registry, mandate, cost: CostModel, now_ms: int, strategy_names=None,
-              enforce_daily_limit: bool = True, note: str = "") -> list:
+              enforce_daily_limit: bool = True, note: str = "", timeframe: str = "5m") -> list:
     q = mandate.qualification
     names = list(strategy_names or catalog.STRATEGIES)
     if len(names) > int(q["max_hypotheses_per_cycle"]):
         raise ValueError("search budget: too many hypotheses in one cycle")
-    classes = [catalog.STRATEGIES[n] for n in names]
+    classes = [catalog.ALL[n] for n in names]
+    if len({c.base_interval for c in classes}) != 1:
+        raise ValueError("one research cycle must use a single base timeframe")
+    base_ms = catalog.INTERVAL_MS[classes[0].base_interval]
     for cls in classes:
         if len(cls.grid) > int(q["max_parameter_trials_per_hypothesis"]):
             raise ValueError(f"search budget: {cls.name} grid exceeds trials limit")
     if enforce_daily_limit and registry.cycles_on(utc_day(now_ms)):
-        raise RuntimeError("a research cycle already ran this UTC day; the daily search budget is spent")
+        raise DailyBudgetSpent("a research cycle already ran this UTC day; the daily search budget is spent")
     configs = sum(len(c.grid) for c in classes)
     alpha = 0.05 / max(1, configs)
     symbols = sorted(universe)
@@ -97,10 +104,12 @@ def run_cycle(universe: dict, registry, mandate, cost: CostModel, now_ms: int, s
     cycle_id = "cyc-" + uuid.uuid4().hex[:12]
     registry.start_cycle(cycle_id, now_ms, len(classes), configs,
                          {"alpha": alpha, "folds": 3, "test_fraction": 0.25, "block_days": 3},
-                         {"symbols": symbols, "data_hash": dhash, "quality_ok": dq["ok"]}, note)
+                         {"symbols": symbols, "data_hash": dhash, "quality_ok": dq["ok"], "timeframe": timeframe,
+                          "base_interval": classes[0].base_interval,
+                          "context_interval": classes[0].context_interval}, note)
     warm = max(c.warmup for c in classes)
     starts = [u[0].t[warm] for u in universe.values() if len(u[0]) > warm]
-    ends = [u[0].t[-1] + FIVE_MIN_MS for u in universe.values() if len(u[0])]
+    ends = [u[0].t[-1] + base_ms for u in universe.values() if len(u[0])]
     results = []
     if len(starts) != len(universe) or not ends:
         t0 = t1 = 0
@@ -121,7 +130,7 @@ def _evaluate(cls, universe, symbols, t0, t1, span_days, registry, cycle_id, cos
         registry.add_candidate(cycle_id, cls.name, version, None, "INSUFFICIENT_DATA", gates,
                                {"data_quality": dq}, 0.0, dhash, chash, now)
         return {"strategy": cls.name, "status": "INSUFFICIENT_DATA", "gates": gates}
-    embargo = cls.max_hold_bars * FIVE_MIN_MS
+    embargo = cls.max_hold_bars * catalog.INTERVAL_MS[cls.base_interval]
     dev_end = t0 + (t1 - t0) * 3 // 4
     chunk = (dev_end - t0) // 4
     bounds = [t0 + k * chunk for k in range(4)] + [dev_end]

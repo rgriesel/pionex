@@ -13,27 +13,53 @@ read-only local dashboard.
 
 ## Start it (exact commands)
 
-Requirements: Python 3.11+ (standard library only), outbound HTTPS to `api.pionex.com`.
+Run it on a computer that stays on and can reach `api.pionex.com`, such as your own always-on PC.
+A Claude Code *cloud* session cannot host it: it runs in a temporary container that is reclaimed
+when idle and cannot reach Pionex. (A session opened from the Claude Desktop app can still be a
+cloud session; check that it runs on your computer before asking it to start the bot.)
+
+Requirements: Python 3.11+ (standard library only), Git, outbound HTTPS to `api.pionex.com`.
 Optional: Node 18+ for Pionex's official dry-run CLI.
+
+**Windows (PowerShell).** Install Python from python.org (tick "Add python.exe to PATH") and Git
+for Windows, then:
+
+```powershell
+git clone https://github.com/rgriesel/pionex.git
+cd pionex
+npm ci --prefix tools/pionex-cli --ignore-scripts   # optional: official Pionex dry-run CLI (needs Node)
+py -m pionex_lab init
+py -m pionex_lab verify
+py -m pionex_lab capability
+py -m pionex_lab run
+```
+
+**macOS / Linux.**
 
 ```bash
 git clone https://github.com/rgriesel/pionex.git && cd pionex
-git checkout claude/pionex-trading-app-build-qtxo88
-
-# Optional, recommended: pinned official Pionex CLI, used only for `--dry-run` order previews.
-# It is never given credentials and never sends orders.
-npm ci --prefix tools/pionex-cli --ignore-scripts
-
+npm ci --prefix tools/pionex-cli --ignore-scripts   # optional: official Pionex dry-run CLI (needs Node)
 python3 -m pionex_lab init          # creates var/ (git-ignored): databases + dashboard token
 python3 -m pionex_lab verify        # skill hashes, vendored risk gate, mandate lock, journal chain
 python3 -m pionex_lab capability    # probes the public endpoints; writes var/capability/*.json
 python3 -m pionex_lab run           # supervises collector + paper engine + dashboard
 ```
 
+The official CLI is used only for `--dry-run` order previews. It is never given credentials and
+never sends orders; without Node, a built-in renderer produces the same request.
+
 `run` prints `dashboard (read-only) ready. Open locally: http://127.0.0.1:8765/#token=…`.
 Open that URL in a browser on the same machine. The token is removed from the address bar and kept
-only for that tab. If you lose the URL, use
-`http://127.0.0.1:8765/#token=$(cat var/dashboard.token)`. Stop everything with Ctrl-C.
+only for that tab. If you lose the URL, rebuild it from `var/dashboard.token`:
+`http://127.0.0.1:8765/#token=$(cat var/dashboard.token)` on macOS/Linux, or
+`"http://127.0.0.1:8765/#token=" + (Get-Content var\dashboard.token)` in PowerShell.
+Stop everything with Ctrl-C.
+
+Keep it running: leave the window open and set the computer's sleep to "never" (sleep pauses the
+bot even when the power stays on). To restart it automatically after a reboot, use Task Scheduler
+on Windows ("At log on", program `py`, arguments `-m pionex_lab run`, start in the `pionex`
+folder) or the systemd units below on Linux. The paper engine recovers its state from the journal
+on restart.
 
 What happens on first start:
 
@@ -43,11 +69,18 @@ What happens on first start:
    after outages are refilled.
 2. The paper engine enters `PAPER`. It starts the 30-day experiment clock only after all feeds are
    fresh and the bar history is complete. Until then it latches `DATA_STALE` and places no entries.
-3. Run research once history exists. It is limited to one cycle per UTC day:
+3. Run research once history exists. It is limited to one cycle (at most 5 hypotheses) per UTC
+   day across all timeframes:
 
    ```bash
-   python3 -m pionex_lab research
+   python3 -m pionex_lab research                   # 5-minute strategies
+   python3 -m pionex_lab research --timeframe 1h    # hourly strategies (use a different UTC day)
    ```
+
+   Pionex serves only ~35 days of 5-minute candles but much longer hourly history, so the hourly
+   variants (same ideas and frozen grids on 1-hour candles with 4-hour context, holding at most
+   4 hours) can reach the 60-day out-of-sample requirement from existing history. Hourly variants
+   are research-only for now; the paper engine trades the 5-minute set.
 
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,
@@ -63,7 +96,7 @@ operating costs such as hosting — the mandate ceiling is $3 total).
 Tests:
 
 ```bash
-python3 -m unittest discover -s tests -v                                              # 58 tests
+python3 -m unittest discover -s tests -v                                              # 62 tests
 python3 -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v   # 12 skill tests
 ```
 
@@ -126,7 +159,7 @@ positions, and exits keep working while entries are halted.
 
 Working and verified:
 
-* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 58 project
+* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 62 project
   tests pass, locally and in GitHub Actions (`.github/workflows/tests.yml`).
 * **Real Pionex public data:** the manual workflow `pionex-public-data` (GitHub Actions run
   36547328965) reached `api.pionex.com`. Every parser accepted the live symbols, book-ticker,

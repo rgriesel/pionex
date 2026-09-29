@@ -132,6 +132,59 @@ class PaperEvidence(unittest.TestCase):
         self.assertEqual(paper_evidence([], T0)["paper_trades_qualified"], 0)
 
 
+class Hourly(unittest.TestCase):
+    def test_resample_complete_groups_only(self):
+        from pionex_lab.data.store import resample
+        closes = random_walk(4 * 30, 100.0, 0.004, seed=5)
+        b = make_bars("BTC_USDT", "60M", closes, start=T0)
+        four = resample(b, "4H")
+        self.assertEqual(len(four), 30)
+        self.assertEqual(four.o[0], b.o[0])
+        self.assertEqual(four.c[0], b.c[3])
+        self.assertEqual(four.h[1], max(b.h[4:8]))
+        self.assertEqual(four.v[2], sum(b.v[8:12]))
+        gap = b.slice(0, 5)
+        for arr in ("t", "o", "h", "l", "c", "v"):
+            getattr(gap, arr).extend(getattr(b.slice(6, 12), arr))
+        self.assertEqual(len(resample(gap, "4H")), 2)     # the group with a missing hour is dropped
+        with self.assertRaises(ValueError):
+            resample(b, "5M")
+
+    def test_hourly_variants_respect_mandate_holding_cap(self):
+        for name, cls in catalog.HOURLY.items():
+            self.assertTrue(name.endswith("_1h"))
+            self.assertEqual((cls.base_interval, cls.context_interval), ("60M", "4H"))
+            self.assertLessEqual(cls.max_hold_bars * 60, 240)   # 4-hour maximum intraday holding
+            self.assertEqual(cls.grid, catalog.STRATEGIES[name[:-3]].grid)  # same frozen grid
+        self.assertEqual(set(catalog.ALL), set(catalog.STRATEGIES) | set(catalog.HOURLY))
+
+    def test_hourly_cycle_runs_and_budget_is_shared_across_timeframes(self):
+        from pionex_lab.data.store import resample
+        from pionex_lab.research.walkforward import DailyBudgetSpent
+        paths, d = tmp_paths()
+        try:
+            universe = {}
+            for k, s in enumerate(("BTC_USDT", "ETH_USDT")):
+                hourly = make_bars(s, "60M", random_walk(24 * 120, 100 + 50 * k, 0.008, seed=21 + k),
+                                   vol=[10 + (i * 7 % 11) for i in range(24 * 120)], spread=0.003)
+                universe[s] = (hourly, resample(hourly, "4H"))
+            reg = Registry(paths.research)
+            res = run_cycle(universe, reg, mandate(), CostModel(), T0 + 130 * 86_400_000,
+                            strategy_names=list(catalog.HOURLY), timeframe="1h")
+            self.assertEqual({r["strategy"] for r in res}, set(catalog.HOURLY))
+            self.assertTrue(all(r["status"] in ("REJECTED", "INSUFFICIENT_DATA") for r in res))
+            row = reg.conn.execute("SELECT data FROM cycles").fetchone()[0]
+            self.assertIn('"timeframe":"1h"', row)
+            with self.assertRaises(DailyBudgetSpent):       # one cycle per UTC day, any timeframe
+                run_cycle(universe, reg, mandate(), CostModel(), T0 + 130 * 86_400_000,
+                          strategy_names=list(catalog.STRATEGIES))
+            with self.assertRaises(ValueError):
+                run_cycle(universe, Registry(paths.root / "r2.db"), mandate(), CostModel(), T0,
+                          strategy_names=["trend_pullback", "trend_pullback_1h"])
+        finally:
+            cleanup(d)
+
+
 class WalkForward(unittest.TestCase):
     def setUp(self):
         self.paths, self.d = tmp_paths()
@@ -159,7 +212,7 @@ class WalkForward(unittest.TestCase):
         grid_total = sum(len(c.grid) for c in catalog.STRATEGIES.values())
         self.assertEqual(reg.trial_count(), grid_total * 4)   # 3 folds + final selection, all retained
         self.assertTrue(all(len(c.grid) <= 20 for c in catalog.STRATEGIES.values()))
-        with self.assertRaisesRegex(RuntimeError, "already ran this UTC day"):
+        with self.assertRaisesRegex(RuntimeError, "already ran this UTC day"):  # DailyBudgetSpent
             run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000)
         cands = reg.latest_candidates()
         self.assertEqual(len(cands), 4)

@@ -23,6 +23,7 @@ MIN_STOP_FRACTION = 0.0015  # tighter stops are dominated by spread/fees
 MAX_STOP_FRACTION = 0.03
 HOUR_MS = 3_600_000
 FIVE_MIN_MS = 300_000
+INTERVAL_MS = {"5M": FIVE_MIN_MS, "60M": HOUR_MS, "4H": 4 * HOUR_MS}
 
 
 @dataclass(frozen=True)
@@ -49,15 +50,18 @@ def _grid(**axes):
     return [dict(zip(keys, combo)) for combo in itertools.product(*(axes[k] for k in keys))]
 
 
-def align_hourly(t5, t60):
-    """For each 5m bar, index of the last 1h bar that had CLOSED by the 5m bar's close."""
-    out, j = [-1] * len(t5), -1
-    for i, t in enumerate(t5):
-        close5 = t + FIVE_MIN_MS
-        while j + 1 < len(t60) and t60[j + 1] + HOUR_MS <= close5:
+def align_context(t_base, t_ctx, base_ms=FIVE_MIN_MS, ctx_ms=HOUR_MS):
+    """For each base bar, index of the last context bar that had CLOSED by the base bar's close."""
+    out, j = [-1] * len(t_base), -1
+    for i, t in enumerate(t_base):
+        close = t + base_ms
+        while j + 1 < len(t_ctx) and t_ctx[j + 1] + ctx_ms <= close:
             j += 1
         out[i] = j
     return out
+
+
+align_hourly = align_context  # 5m base / 1h context (original name)
 
 
 class Strategy:
@@ -66,6 +70,10 @@ class Strategy:
     grid: list = []
     max_hold_bars = 48
     warmup = 250
+    # Base bars drive signals; context bars give the higher-timeframe regime. Keys in the
+    # prepared data keep their original names ("b5" = base, "b60"/"h1" = context).
+    base_interval = "5M"
+    context_interval = "60M"
 
     def __init__(self, params: dict | None = None):
         self.params = dict(params or self.grid[0])
@@ -80,7 +88,7 @@ class Strategy:
     def prepare(self, universe: dict) -> dict:
         prep = {}
         for sym, (b5, b60) in universe.items():
-            h1 = align_hourly(b5.t, b60.t)
+            h1 = align_context(b5.t, b60.t, INTERVAL_MS[self.base_interval], INTERVAL_MS[self.context_interval])
             c60 = b60.c
             prep[sym] = {"b5": b5, "b60": b60, "h1": h1, "atr": atr(b5.h, b5.l, b5.c, 14),
                          "ema20_1h": ema(c60, 20), "ema50_1h": ema(c60, 50)}
@@ -103,7 +111,8 @@ class Strategy:
             return None
         if target is not None and (not finite(target) or target <= close):
             return None
-        return Signal(self.name, self.version, symbol, b5.t[i], b5.t[i] + FIVE_MIN_MS, close, stop, target,
+        return Signal(self.name, self.version, symbol, b5.t[i], b5.t[i] + INTERVAL_MS[self.base_interval], close,
+                      stop, target,
                       hold or self.max_hold_bars, reason, {k: round(v, 8) if isinstance(v, float) else v
                                                           for k, v in features.items()})
 
@@ -260,5 +269,20 @@ class RelativeStrength(Strategy):
 STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength)}
 
 
+def _hourly(cls):
+    """Same hypothesis and frozen grid on 1-hour candles with 4-hour context. Holding is
+    capped at 4 bars (4 hours), the mandate's maximum intraday holding period. Grids are
+    in bars of the base interval and were fixed before any hourly result was seen."""
+    return type(cls.__name__ + "Hourly", (cls,), {
+        "name": cls.name + "_1h", "base_interval": "60M", "context_interval": "4H", "max_hold_bars": 4,
+        "__doc__": (cls.__doc__ or "") + " [1h base / 4h context variant]"})
+
+
+HOURLY = {c.name: c for c in (_hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
+                              _hourly(RelativeStrength))}
+ALL = {**STRATEGIES, **HOURLY}
+TIMEFRAMES = {"5m": ("5M", "60M", STRATEGIES), "1h": ("60M", "4H", HOURLY)}
+
+
 def build(name: str, params: dict | None = None) -> Strategy:
-    return STRATEGIES[name](params)
+    return ALL[name](params)

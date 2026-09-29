@@ -29,6 +29,7 @@ class Collector:
         self._next: dict[str, int] = {}
         self._errors = 0
         self._last_error = None
+        self._last_error_code = None
         self._last_ok = None
         self._skew_ms = None
         self._schema_errors = 0
@@ -55,6 +56,7 @@ class Collector:
         return result, env
 
     def _fail(self, name, now, exc):
+        self._last_error_code = getattr(exc, "code", None)
         self._errors += 1
         self._last_error = f"{name}: {exc}"[:300]
         self.store.log_fetch(now, name, False, error=str(exc))
@@ -112,7 +114,10 @@ class Collector:
             kl, env = self._call(f"backfill:{symbol}:{interval}", self.client.klines, symbol, interval, end, 500)
             pages += 1
             if kl is None:
-                reason = "FETCH_ERROR"
+                # Observed 2026-09-29: Pionex rejects 5M klines with endTime older than ~10,000 bars
+                # (code MARKET_INVALID_TIME). That is the venue's history limit, not a transient error.
+                reason = ("EXCHANGE_HISTORY_LIMIT" if end is not None and self._last_error_code == "MARKET_INVALID_TIME"
+                          else "FETCH_ERROR")
                 break
             if not kl:
                 reason = "NO_MORE_HISTORY"

@@ -66,6 +66,16 @@ def paired_comparison(baseline: dict, challenger: dict, alpha: float = 0.05) -> 
             "ci95_high_usd": max(hi, mean) if hi is not None else None}
 
 
+def paper_evidence(closed: list, now: int) -> dict:
+    """Closed paper episodes by frozen QUALIFIED candidates and hours since the first one opened
+    (the 72h AND 50-trade paper gate). Episodes of unqualified strategies do not count."""
+    q = [p for p in closed if p.get("qualification") == "QUALIFIED_FOR_PAPER"]
+    if not q:
+        return {"paper_trades_qualified": 0, "paper_hours_qualified": 0.0}
+    first = min(parse_iso_ms(p["opened_at"]) for p in q)
+    return {"paper_trades_qualified": len(q), "paper_hours_qualified": max(0.0, (now - first) / 3_600_000)}
+
+
 def build_report(paths, mandate, now: int, journal=None, market=None, risk=None, registry=None,
                  universe=("BTC_USDT", "ETH_USDT")) -> dict:
     own = []
@@ -190,8 +200,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
     reasons.append("Simulated fills on later observed quotes; order requests are Pionex dry-run previews (never sent).")
 
     gates = live_preflight(mandate, registry=registry, risk=risk,
-                           paper_trades_qualified=sum(1 for _, p in closed if p.get("qualification") == "QUALIFIED_FOR_PAPER"),
-                           paper_hours_qualified=0.0)
+                           **paper_evidence([p for _, p in closed], now))
     report = {
         "schema_version": 1, "mode": "PAPER",
         "source_label": ("Canonical paper ledger · simulated fills on observed Pionex public quotes" if official else

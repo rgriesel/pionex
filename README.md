@@ -63,7 +63,7 @@ operating costs such as hosting — the mandate ceiling is $3 total).
 Tests:
 
 ```bash
-python3 -m unittest discover -s tests -v                                              # 56 tests
+python3 -m unittest discover -s tests -v                                              # 58 tests
 python3 -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v   # 12 skill tests
 ```
 
@@ -122,31 +122,45 @@ absolute-loss, tamper, and unexplained-balance latches need a human `review-latc
 command requires an interactive terminal, and Claude Code is denied it. Loss latches unwind open
 positions, and exits keep working while entries are halted.
 
-## Status as of 2026-09-28
+## Status as of 2026-09-29
 
-Working and verified in the build environment:
+Working and verified:
 
-* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 56 project
-  tests pass.
+* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 58 project
+  tests pass, locally and in GitHub Actions (`.github/workflows/tests.yml`).
+* **Real Pionex public data:** the manual workflow `pionex-public-data` (GitHub Actions run
+  36547328965) reached `api.pionex.com`. Every parser accepted the live symbols, book-ticker,
+  depth, kline, and trade responses (clock skew 86 ms, latency 231 ms).
 * End-to-end runs against a local **synthetic** fake exchange (`tests/fake_pionex.py`) exercise
   collection, backfill, the entry, fill, exit, and close lifecycle, restart recovery with lease
   fencing, loss-latch unwinding, stale-feed freezing with the 60-second recovery rule, 429 bans,
-  gap repair, deadline unwind, and the final report.
+  gap repair, the venue history limit, deadline unwind, and the final report.
 * Dry-run previews cross-checked against the official `pionex-trade-cli` 0.2.55.
 * Dashboard checked in headless Chromium at desktop and phone widths while connected to a ledger
   server. Unauthenticated API calls get 401; writes get 405.
 
-Not yet verified, and the remaining blockers:
+First research cycle on real Pionex history (2026-09-29, about 34.7 days of 5-minute candles).
+This is evidence **against** the current hypotheses, not a forecast:
 
-1. **Real Pionex data.** The cloud build environment's network policy blocks `api.pionex.com`
-   (403 at the proxy), so no real quotes have been collected yet and no real paper result exists.
-   Run it on your own machine, or allow `api.pionex.com` in the environment's network settings.
-   On the first real run, check `python3 -m pionex_lab capability` and compare the saved fixtures
-   with the parsers. The response fields follow Pionex's docs and official AI Kit but have not been
-   observed from here.
-2. **No qualified strategy.** Qualification needs at least 200 out-of-sample trades over at least
-   60 days, plus profit-factor, confidence-bound, and stress gates. Expect `NO_TRADE` until research
-   on real history says otherwise. It may never say so, and that is a legitimate result.
+| Hypothesis | Out-of-sample trades | Mean net per trade | Result |
+|---|---:|---:|---|
+| Volatility breakout | 30 | −26.9 bps | Rejected |
+| Trend pullback | 38 | −12.3 bps | Rejected |
+| Range reversion | 70 | −16.4 bps | Rejected |
+| Relative strength | 135 | −14.6 bps | Rejected |
+
+The paper engine therefore makes `NO_TRADE` decisions and measures every signal in shadow books.
+
+Remaining blockers:
+
+1. **This cloud session cannot reach `api.pionex.com`** (403 at its proxy). The paper runtime needs
+   a host that can: your machine, a server, or this environment after `api.pionex.com` is allowed in
+   its network settings. GitHub Actions can reach it, but CI is not a persistent host.
+2. **The out-of-sample evidence window is limited by the venue.** Pionex serves about 10,000
+   five-minute bars (~34.7 days), so the 60-day out-of-sample gate cannot be met from exchange
+   history alone. The collector must keep collecting going forward (roughly 3+ months of continuous
+   running). Alternatively, hourly-resolution hypotheses can use the longer 60M history; that is a
+   research design choice for you, and the gates stay unchanged either way.
 3. **Live trading stays disabled** (15 gates; 1 passes). Missing: your authorization record for
    the exact account, capital, instruments, and mandate hash; a dedicated or segregated account; a
    live symbol allowlist; verified account fees; exchange-side protective exits (the spot API

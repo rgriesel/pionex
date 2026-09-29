@@ -120,6 +120,18 @@ class Metrics(unittest.TestCase):
         self.assertLess(metrics.block_bootstrap_lower(tr, 0.05 / 30), lo1)  # search-adjusted is wider
 
 
+class PaperEvidence(unittest.TestCase):
+    def test_only_qualified_episodes_count(self):
+        from pionex_lab.reporting.report import paper_evidence
+        from pionex_lab.util import iso_ms
+        closed = [{"qualification": "QUALIFIED_FOR_PAPER", "opened_at": iso_ms(T0)},
+                  {"qualification": "UNREGISTERED", "opened_at": iso_ms(T0 - 86_400_000)},
+                  {"qualification": "QUALIFIED_FOR_PAPER", "opened_at": iso_ms(T0 + 3_600_000)}]
+        ev = paper_evidence(closed, T0 + 73 * 3_600_000)
+        self.assertEqual(ev, {"paper_trades_qualified": 2, "paper_hours_qualified": 73.0})
+        self.assertEqual(paper_evidence([], T0)["paper_trades_qualified"], 0)
+
+
 class WalkForward(unittest.TestCase):
     def setUp(self):
         self.paths, self.d = tmp_paths()

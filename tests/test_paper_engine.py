@@ -283,6 +283,13 @@ class Recovery(unittest.TestCase):
         self.h.run(eng, 700, step=10.0)
         self.assertNotIn(("ETH_USDT", "5M"), self.h.collector.backfill_pending)
 
+    def test_exchange_history_limit_is_not_retried(self):
+        self.h.fake.history_limit_bars = 1200
+        cov = self.h.collector.backfill("BTC_USDT", "5M", 30)
+        self.assertEqual(cov["stop_reason"], "EXCHANGE_HISTORY_LIMIT")
+        self.assertGreaterEqual(cov["bars_received"], 1000)
+        self.assertNotIn(("BTC_USDT", "5M"), self.h.collector.backfill_pending)
+
     def test_unqualified_or_zero_edge_strategy_never_trades(self):
         eng = self.h.engine(edge="0", status="UNREGISTERED")
         self.h.run(eng, 20)

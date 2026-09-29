@@ -10,11 +10,13 @@ Endpoint paths and parameters match Pionex's official AI Kit (@pionex/pionex-ai-
   GET /api/v1/market/trades    symbol, limit (1-100)
   GET /api/v1/market/tickers   symbol | type
 
-Response field names follow the published docs but were NOT observed from this
-container (api.pionex.com was blocked by its network policy). Every parser
-therefore validates strictly and raises SchemaError on anything unexpected; the
-collector records the failure and the engine freezes entries. There is no signing,
-no credential handling, and no order endpoint in this module by design.
+All parsers were verified against live api.pionex.com responses on 2026-09-29
+(GitHub Actions run 36547328965: symbols, bookTickers, depth, klines, trades).
+Observed limit: 5M klines with an endTime older than ~10,000 bars (~34.7 days) are
+rejected with code MARKET_INVALID_TIME; 60M history reached 150+ days. Parsers
+still validate strictly and raise SchemaError on anything unexpected; the collector
+records the failure and the engine freezes entries. There is no signing, no
+credential handling, and no order endpoint in this module by design.
 """
 from __future__ import annotations
 

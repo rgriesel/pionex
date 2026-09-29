@@ -389,9 +389,15 @@ def cmd_live_preflight(args, paths, cfg, mandate):
     from .execution.live import live_preflight
     from .research.registry import Registry
     from .risk.service import RiskView
+    from .ledger.journal import Journal
+    from .reporting.report import paper_evidence
     reg = Registry(paths.research, readonly=True) if paths.research.exists() else None
     risk = RiskView(mandate, paths.risk) if paths.risk.exists() else None
-    gates = live_preflight(mandate, registry=reg, risk=risk)
+    evidence = {}
+    if paths.ledger.exists():
+        closed = [p for _, _, _, p in Journal(paths.ledger, readonly=True).events(("POSITION_CLOSED",))]
+        evidence = paper_evidence(closed, SystemClock().now_ms())
+    gates = live_preflight(mandate, registry=reg, risk=risk, **evidence)
     for g in gates:
         print(f"{g['status']:<16} {g['gate']}: {g['detail']}")
     print("\nLIVE TRADING DISABLED" if any(g["status"] != "PASS" for g in gates) else "\nno live path exists")

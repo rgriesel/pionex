@@ -43,6 +43,7 @@ class FakePionex:
         self.price = price_fn
         self.spread_bps = spread_bps
         self.mode = "ok"            # "ok" | "429" | "malformed" | "down"
+        self.history_limit_bars = None  # mimic Pionex rejecting old endTime (MARKET_INVALID_TIME)
         self.requests = []
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -127,6 +128,10 @@ class FakePionex:
                     return self._send(200, env({"bids": bids, "asks": asks, "updateTime": now}))
                 if u.path == "/api/v1/market/klines":
                     step = INTERVALS[q["interval"]]
+                    lim = fake.history_limit_bars
+                    if lim and "endTime" in q and int(q["endTime"]) < now - lim * step:
+                        return self._send(200, {"result": False, "code": "MARKET_INVALID_TIME",
+                                                "message": "endTime param error"})
                     end = min(int(q.get("endTime", now)), now)
                     limit = int(q.get("limit", 100))
                     last_open = (end // step) * step

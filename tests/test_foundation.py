@@ -209,6 +209,41 @@ class Portability(unittest.TestCase):
             cleanup(d)
 
 
+class DailyAutomation(unittest.TestCase):
+    def test_jobs_due_once_per_day_after_the_offset(self):
+        from pionex_lab.cli import DAILY_JOB_MINUTE, due_daily_jobs
+        early = T0 + (DAILY_JOB_MINUTE - 1) * 60_000
+        late = T0 + DAILY_JOB_MINUTE * 60_000
+        self.assertEqual(due_daily_jobs({}, early), [])
+        jobs = due_daily_jobs({}, late)
+        self.assertEqual(jobs[0], ["daily-review"])
+        self.assertEqual(jobs[1][:2], ["research", "--timeframe"])
+        from pionex_lab.util import utc_day
+        self.assertEqual(due_daily_jobs({"day": utc_day(late)}, late + 3_600_000), [])
+        self.assertEqual(len(due_daily_jobs({"day": utc_day(late)}, late + 86_400_000)), 2)
+
+    def test_research_timeframe_alternates(self):
+        from pionex_lab.cli import research_timeframe_for
+        self.assertEqual({research_timeframe_for("2026-09-29"), research_timeframe_for("2026-09-30")}, {"1h", "5m"})
+
+    def test_research_skips_without_enough_history(self):
+        import contextlib, io
+        from pionex_lab.cli import main
+        from pionex_lab.research.registry import Registry
+        paths, d = tmp_paths()
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(main(["--var", str(paths.root), "init"]), 0)
+                self.assertEqual(main(["--var", str(paths.root), "research", "--timeframe", "1h"]), 0)
+            self.assertIn("SKIPPED", out.getvalue())
+            self.assertIn("No research budget used", out.getvalue())
+            reg = Registry(paths.research)
+            self.assertEqual(reg.conn.execute("SELECT COUNT(*) FROM cycles").fetchone()[0], 0)
+        finally:
+            cleanup(d)
+
+
 class Limiter(unittest.TestCase):
     def test_exit_headroom_and_ban(self):
         clock = FakeClock(T0)

@@ -36,7 +36,7 @@ SKILL_HASHES = {  # from Pionex-Claude-Code-Handoff.json (agent-skill-handoff-v1
 
 
 def _setup_logging(paths: Paths, name: str | None, verbose: bool) -> None:
-    handlers = [logging.StreamHandler(sys.stderr)]
+    handlers = [logging.StreamHandler(sys.stderr)] if sys.stderr is not None else []  # None under pythonw
     if name:
         paths.logs.mkdir(parents=True, exist_ok=True)
         handlers.append(logging.FileHandler(paths.logs / f"{name}.log"))
@@ -207,6 +207,12 @@ def cmd_research(args, paths, cfg, mandate):
     half_spread = max(1.0, max(spreads) / 2) if spreads else 1.0
     cost = CostModel(fee_per_side=float(mandate.fee_per_side), half_spread_bps=half_spread)
     base, context, names = TIMEFRAMES[args.timeframe]
+    spans = [(b.t[-1] - b.t[0]) / 86_400_000 if len(b) > 1 else 0.0 for b, _ in universe.values()]
+    need = MIN_HISTORY_DAYS[args.timeframe]
+    if not spans or min(spans) < need:
+        print(f"SKIPPED: {args.timeframe} research needs {need:.0f} days of history; have "
+              f"{min(spans) if spans else 0:.1f}. No research budget used.")
+        return 0
     print(f"timeframe {args.timeframe}: " + ", ".join(f"{s} {base}={len(b)} {context}={len(c)}"
                                                      for s, (b, c) in universe.items()))
     print(f"cost model: fee {cost.fee_per_side:.4%}/side, half-spread {half_spread:.2f} bps "
@@ -256,8 +262,28 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}
+DAILY_JOB_MINUTE = 10  # run the daily jobs from 00:10 UTC, after the day's first bars have closed
+STARTUP_GRACE_MS = 15 * 60_000  # let the collector finish its backfill before the first research cycle
+
+
+def research_timeframe_for(day: str) -> str:
+    """Alternate the single daily research cycle between timeframes (mandate: one cycle per UTC day)."""
+    from datetime import date
+    return "1h" if date.fromisoformat(day).toordinal() % 2 == 0 else "5m"
+
+
+def due_daily_jobs(state: dict, now_ms: int) -> list:
+    """Daily automation for the supervisor: reconcile/attribute yesterday, then one research cycle."""
+    day = utc_day(now_ms)
+    if state.get("day") == day or (now_ms % 86_400_000) // 60_000 < DAILY_JOB_MINUTE:
+        return []
+    return [["daily-review"], ["research", "--timeframe", research_timeframe_for(day), "--note", "automatic daily cycle"]]
+
+
 def cmd_run(args, paths, cfg, mandate):
-    """Supervise collector, paper engine, and dashboard; restart crashed children."""
+    """Supervise collector, paper engine, and dashboard; restart crashed children; run the daily
+    review and the daily research cycle automatically."""
     paths.ensure()
     _setup_logging(paths, "supervisor", args.verbose)
     base = [sys.executable, "-m", "pionex_lab"]
@@ -265,7 +291,28 @@ def cmd_run(args, paths, cfg, mandate):
     procs, backoff, next_start = {}, {k: 1.0 for k in children}, {k: 0.0 for k in children}
     stop = _stop_event()
     env = dict(os.environ)
+    env["PIONEX_LAB_VAR"] = str(paths.root)  # children use the same state directory
+    state_path = paths.root / "supervisor-daily.json"
+    try:
+        daily_state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        daily_state = {}
+    queue, job, started_ms = [], None, int(time.time() * 1000)
     while not stop.is_set():
+        if job is not None and job.poll() is not None:
+            log.info("daily job finished with exit code %s", job.returncode)
+            job = None
+        now_ms = int(time.time() * 1000)
+        if job is None and not queue and now_ms - started_ms >= STARTUP_GRACE_MS:
+            jobs = due_daily_jobs(daily_state, now_ms)
+            if jobs:
+                queue = jobs
+                daily_state = {"day": utc_day(now_ms), "jobs": [" ".join(j) for j in jobs]}
+                state_path.write_text(json.dumps(daily_state), encoding="utf-8")
+        if job is None and queue:
+            argv = base + queue.pop(0)
+            job = subprocess.Popen(argv, cwd=PROJECT_ROOT, env=env)
+            log.info("started daily job %s pid=%s", " ".join(argv[3:]), job.pid)
         for name, argv in children.items():
             p = procs.get(name)
             if p is not None and p.poll() is None:
@@ -279,6 +326,8 @@ def cmd_run(args, paths, cfg, mandate):
                 procs[name] = subprocess.Popen(argv, cwd=PROJECT_ROOT, env=env)
                 log.info("started %s pid=%s", name, procs[name].pid)
         stop.wait(1.0)
+    if job is not None and job.poll() is None:
+        job.terminate()
     for name, p in procs.items():
         if p is not None and p.poll() is None:
             p.terminate()

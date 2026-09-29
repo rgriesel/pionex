@@ -3,7 +3,7 @@
   "research_universe": ["BTC_USDT", "ETH_USDT"],
   "depeg_monitor_symbol": "USDC_USDT",
   "bar_intervals": ["5M", "60M"],
-  "backfill_days": 150,
+  "backfill_days": 420,
   "poll": {
     "book_seconds": 1.0,
     "depth_seconds": 3.0,

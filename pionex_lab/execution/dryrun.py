@@ -125,7 +125,9 @@ def official_cli_preview(request: dict, cli: list, timeout_s: float = 20.0) -> d
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("PIONEX")}
     with tempfile.TemporaryDirectory(prefix="pionex-dryrun-") as home:
         env["HOME"] = env["USERPROFILE"] = home  # no ~/.pionex/config.toml can be read (POSIX or Windows)
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console flash under pythonw on Windows
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s, env=env, check=False,
+                              creationflags=flags)
     if proc.returncode != 0:
         raise DryRunError(f"OFFICIAL_CLI_FAILED: {proc.stderr.strip()[:300]}")
     try:

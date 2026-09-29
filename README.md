@@ -15,26 +15,43 @@ read-only local dashboard.
 
 Run it on a computer that stays on and can reach `api.pionex.com`, such as your own always-on PC.
 A Claude Code *cloud* session cannot host it: it runs in a temporary container that is reclaimed
-when idle and cannot reach Pionex. (A session opened from the Claude Desktop app can still be a
-cloud session; check that it runs on your computer before asking it to start the bot.)
+when idle, and its default network policy blocks `api.pionex.com`. A session opened from the Claude
+Desktop app can still be a cloud session. To let Claude do this on your PC, start a **Local**
+session there (or run `claude remote-control` in a terminal) and ask it to run the line below.
 
-Requirements: Python 3.11+ (standard library only), Git, outbound HTTPS to `api.pionex.com`.
-Optional: Node 18+ for Pionex's official dry-run CLI.
+**One line.** This installs everything, starts the lab in the background, and starts it again
+after every logon or reboot. Re-running it updates the code and restarts the lab.
 
-**Windows (PowerShell).** Install Python from python.org (tick "Add python.exe to PATH") and Git
-for Windows, then:
+Windows (PowerShell):
 
 ```powershell
-git clone https://github.com/rgriesel/pionex.git
-cd pionex
-npm ci --prefix tools/pionex-cli --ignore-scripts   # optional: official Pionex dry-run CLI (needs Node)
-py -m pionex_lab init
-py -m pionex_lab verify
-py -m pionex_lab capability
-py -m pionex_lab run
+irm https://raw.githubusercontent.com/rgriesel/pionex/main/tools/install/windows.ps1 | iex
 ```
 
-**macOS / Linux.**
+macOS / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rgriesel/pionex/main/tools/install/unix.sh | bash
+```
+
+What the installer does: it installs Python 3.12, Git, and Node.js LTS with `winget` if they are
+missing (Windows; on macOS/Linux it needs Python 3.11+ and Git). It clones the repository into
+`~/pionex` (`%USERPROFILE%\pionex`), installs the pinned official Pionex CLI, and runs `init`,
+`verify`, and `capability`. It then starts `run` and registers auto-start: a per-user scheduled
+task `PionexLab` at logon that restarts on failure (Windows; it also sets sleep on mains power to
+"never"), or an `@reboot` crontab entry (macOS/Linux). Finally it opens the dashboard; on Windows it
+also leaves a "Pionex Lab Dashboard" shortcut on the desktop. No API key is asked for or used.
+
+After that nothing needs your input. `run` supervises the collector, paper engine and dashboard,
+restarts any that exit, and once each UTC day (from 00:10 UTC, and no earlier than 15 minutes
+after start so the history download can finish) runs `daily-review` and one research cycle. The
+research cycle alternates between the 1-hour and 5-minute strategies by UTC day. It is skipped,
+without spending the research budget, until there is enough history (20 days for 5-minute, 90 days
+for 1-hour). Logs are in `var/logs/`. Stop it with `Stop-ScheduledTask -TaskName PionexLab`
+(Windows) or `pkill -f 'pionex_lab run'` (macOS/Linux).
+
+**Manual install.** Requirements: Python 3.11+ (standard library only), Git, and outbound HTTPS to
+`api.pionex.com`. Optional: Node 18+ for Pionex's official dry-run CLI.
 
 ```bash
 git clone https://github.com/rgriesel/pionex.git && cd pionex
@@ -42,8 +59,10 @@ npm ci --prefix tools/pionex-cli --ignore-scripts   # optional: official Pionex 
 python3 -m pionex_lab init          # creates var/ (git-ignored): databases + dashboard token
 python3 -m pionex_lab verify        # skill hashes, vendored risk gate, mandate lock, journal chain
 python3 -m pionex_lab capability    # probes the public endpoints; writes var/capability/*.json
-python3 -m pionex_lab run           # supervises collector + paper engine + dashboard
+python3 -m pionex_lab run           # supervises collector + paper engine + dashboard + daily jobs
 ```
+
+On Windows use `py -m pionex_lab …` instead of `python3 -m pionex_lab …`.
 
 The official CLI is used only for `--dry-run` order previews. It is never given credentials and
 never sends orders; without Node, a built-in renderer produces the same request.
@@ -53,25 +72,19 @@ Open that URL in a browser on the same machine. The token is removed from the ad
 only for that tab. If you lose the URL, rebuild it from `var/dashboard.token`:
 `http://127.0.0.1:8765/#token=$(cat var/dashboard.token)` on macOS/Linux, or
 `"http://127.0.0.1:8765/#token=" + (Get-Content var\dashboard.token)` in PowerShell.
-Stop everything with Ctrl-C.
-
-Keep it running: leave the window open and set the computer's sleep to "never" (sleep pauses the
-bot even when the power stays on). To restart it automatically after a reboot, use Task Scheduler
-on Windows ("At log on", program `py`, arguments `-m pionex_lab run`, start in the `pionex`
-folder) or the systemd units below on Linux. The paper engine recovers its state from the journal
-on restart.
+The paper engine recovers its state from the journal on restart.
 
 What happens on first start:
 
-1. The collector backfills up to 150 days of 5-minute and 1-hour candles for BTC_USDT and ETH_USDT
-   (5-minute history stops at Pionex's ~35-day limit; about 60 requests at the 5 requests/second
-   local budget), then polls book tickers every 1s,
+1. The collector backfills up to 420 days of 5-minute and 1-hour candles for BTC_USDT and ETH_USDT
+   (Pionex stops at about 10,000 candles: ~35 days of 5-minute and ~417 days of 1-hour history;
+   about 80 requests at the 5 requests/second local budget), then polls book tickers every 1s,
    depth every 3s, and candles every 20s. Failed backfills are retried every 10 minutes, and gaps
    after outages are refilled.
 2. The paper engine enters `PAPER`. It starts the 30-day experiment clock only after all feeds are
    fresh and the bar history is complete. Until then it latches `DATA_STALE` and places no entries.
-3. Run research once history exists. It is limited to one cycle (at most 5 hypotheses) per UTC
-   day across all timeframes:
+3. Research runs automatically once a day (see above). You can also run it by hand. It is limited
+   to one cycle (at most 5 hypotheses) per UTC day across all timeframes:
 
    ```bash
    python3 -m pionex_lab research                   # 5-minute strategies
@@ -87,7 +100,7 @@ What happens on first start:
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,
    search-adjusted edge above round-trip costs plus 5 bps. Otherwise the correct outcome is
    `NO_TRADE`, and every signal is still measured in a virtual shadow book.
-4. Once per day: `python3 -m pionex_lab daily-review` (reconciliation + attribution into the journal).
+4. Once per day, automatically: `daily-review` (reconciliation + attribution into the journal).
 
 Other commands: `collect`, `paper`, `serve` (run the components separately); `status`; `report --out
 report.json` (a snapshot file you can import into `dashboard/index.html` opened directly);
@@ -97,7 +110,7 @@ operating costs such as hosting — the mandate ceiling is $3 total).
 Tests:
 
 ```bash
-python3 -m unittest discover -s tests -v                                              # 62 tests
+python3 -m unittest discover -s tests -v                                              # 65 tests
 python3 -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v   # 12 skill tests
 ```
 
@@ -160,7 +173,7 @@ positions, and exits keep working while entries are halted.
 
 Working and verified:
 
-* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 62 project
+* All 9 skill files installed, with SHA-256 verified; the skill's 12 risk tests pass; 65 project
   tests pass, locally and in GitHub Actions (`.github/workflows/tests.yml`).
 * **Real Pionex public data:** the manual workflow `pionex-public-data` (GitHub Actions run
   36547328965) reached `api.pionex.com`. Every parser accepted the live symbols, book-ticker,
@@ -187,9 +200,13 @@ The paper engine therefore makes `NO_TRADE` decisions and measures every signal 
 
 Remaining blockers:
 
-1. **This cloud session cannot reach `api.pionex.com`** (403 at its proxy). The paper runtime needs
-   a host that can: your machine, a server, or this environment after `api.pionex.com` is allowed in
-   its network settings. GitHub Actions can reach it, but CI is not a persistent host.
+1. **The continuous paper runtime needs a host that stays on.** Claude Code cloud sessions cannot
+   host it: the container is temporary and its network policy blocks `api.pionex.com` (403 at its
+   proxy). Run the one-line installer on your always-on PC. Until then, GitHub Actions runs the
+   research side automatically on real Pionex data (Monday: 1-hour, Thursday: 5-minute strategies).
+   Results appear in the run summaries of `pionex-public-data`. CI does not run the paper engine,
+   because it is not a persistent host. The CI and PC research registries are kept separately; a
+   candidate may trade the PC's paper book only if it qualifies in the PC's own registry.
 2. **The out-of-sample evidence window is limited by the venue.** Pionex serves about 10,000
    five-minute bars (~34.7 days), so the 60-day out-of-sample gate cannot be met from exchange
    history alone. The collector must keep collecting going forward (roughly 3+ months of continuous
@@ -201,8 +218,10 @@ Remaining blockers:
    documents only LIMIT/MARKET); a server-side secret store and separate signer; separate service
    identities; reconciliation against the exchange; a canary path; and paper evidence (72 hours
    AND 50 closed trades with the frozen qualified candidate).
-4. **24/7 hosting.** The `deploy/systemd/` units (sandboxed, code and mandate root-owned and read-only
-   for the service user) are provided but were not exercised in this environment.
+4. **Server deployment.** The installers were tested end to end on Linux (runtime, dashboard, and daily
+   jobs), and the Windows installer was parse-checked with PowerShell 7. The `deploy/systemd/`
+   units (sandboxed, code and mandate root-owned and read-only for the service user) are an
+   alternative for servers, but they were not exercised in this environment.
 5. **USD valuation** assumes 1 USDT = 1 USD. This is labeled everywhere; the USDC_USDT cross
    latches `QUOTE_DEPEG` if it moves beyond 1%.
 6. **Human comparison** is unavailable until a dated human ledger for the same window is supplied.

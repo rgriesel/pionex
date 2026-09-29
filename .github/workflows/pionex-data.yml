@@ -1,10 +1,14 @@
 name: pionex-public-data
 
-# Manual only. Probes Pionex PUBLIC market-data endpoints, backfills candles, and runs one
-# walk-forward research cycle. No credentials, no order endpoints, no paper engine (CI is not a
-# persistent host). The research registry is carried between runs in the Actions cache so the
+# Probes Pionex PUBLIC market-data endpoints, backfills candles, and runs one walk-forward
+# research cycle on real data. No credentials, no order endpoints, no paper engine (CI is not a
+# persistent host). Runs on a schedule (Monday: 1-hour strategies, Thursday: 5-minute strategies)
+# and on demand. The research registry is carried between runs in the Actions cache so the
 # mandate's one-cycle-per-UTC-day search budget and the full trial history hold across runs.
 on:
+  schedule:
+    - cron: "37 0 * * 1"   # Monday 00:37 UTC: 1-hour strategies
+    - cron: "37 0 * * 4"   # Thursday 00:37 UTC: 5-minute strategies
   workflow_dispatch:
     inputs:
       timeframe:
@@ -13,12 +17,16 @@ on:
         options: ["5m", "1h"]
         default: "5m"
       backfill_days:
-        description: "Days of history to backfill (Pionex caps 5-minute history at ~35 days)"
-        default: "150"
+        description: "Days of history to backfill (Pionex serves ~35 days of 5m, ~417 days of 1h)"
+        default: "420"
       run_research:
         description: "Run one research cycle after backfill"
         type: boolean
         default: true
+
+concurrency:
+  group: pionex-public-data
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -29,8 +37,25 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Runtime state directory
-        run: echo "PIONEX_LAB_VAR=$RUNNER_TEMP/var" >> "$GITHUB_ENV"
+      - name: Runtime state directory and run settings
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          IN_TIMEFRAME: ${{ inputs.timeframe }}
+          IN_DAYS: ${{ inputs.backfill_days }}
+          IN_RESEARCH: ${{ inputs.run_research }}
+        run: |
+          echo "PIONEX_LAB_VAR=$RUNNER_TEMP/var" >> "$GITHUB_ENV"
+          if [ "$EVENT" = "schedule" ]; then
+            case "$SCHEDULE" in "37 0 * * 1") TF=1h ;; *) TF=5m ;; esac
+            DAYS=420; RESEARCH=true
+          else
+            TF="$IN_TIMEFRAME"; DAYS="$IN_DAYS"; RESEARCH="$IN_RESEARCH"
+          fi
+          echo "TIMEFRAME=$TF" >> "$GITHUB_ENV"
+          echo "BACKFILL_DAYS=$DAYS" >> "$GITHUB_ENV"
+          echo "RUN_RESEARCH=$RESEARCH" >> "$GITHUB_ENV"
+          echo "event=$EVENT timeframe=$TF backfill_days=$DAYS research=$RESEARCH"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -45,13 +70,13 @@ jobs:
       - name: Capability probe (public endpoints)
         run: python -m pionex_lab capability
       - name: Backfill candles
-        run: python -m pionex_lab collect --backfill-only --backfill-days "${{ inputs.backfill_days }}"
+        run: python -m pionex_lab collect --backfill-only --backfill-days "$BACKFILL_DAYS"
       - name: Data summary
         run: python -m pionex_lab status
       - name: Research cycle
-        if: ${{ inputs.run_research }}
+        if: ${{ env.RUN_RESEARCH == 'true' }}
         run: |
-          python -m pionex_lab research --timeframe "${{ inputs.timeframe }}" --note "CI public-data cycle" \
+          python -m pionex_lab research --timeframe "$TIMEFRAME" --note "CI public-data cycle ($GITHUB_EVENT_NAME)" \
             | tee "$RUNNER_TEMP/research.out"
           python - "$RUNNER_TEMP/research.out" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys

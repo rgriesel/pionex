@@ -30,6 +30,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read   # to recover the research registry from the previous run's artifact
 
 jobs:
   probe:
@@ -60,11 +61,29 @@ jobs:
         with:
           python-version: "3.11"
       - name: Restore research registry
+        id: registry
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/var/research.db
           key: research-registry-${{ github.run_id }}
           restore-keys: research-registry-
+      # Caches are scoped to branches and evicted after 7 idle days. Without a cache, carry the full
+      # trial history forward from the newest successful run's artifact instead of starting empty.
+      - name: Recover research registry from the previous run
+        if: ${{ steps.registry.outputs.cache-matched-key == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pionex-data.yml --status success \
+                   --limit 20 --json databaseId --jq '.[].databaseId' | grep -vx "$GITHUB_RUN_ID" | head -1 || true)
+          if [ -n "$prev" ] && gh run download "$prev" --repo "$GITHUB_REPOSITORY" --name pionex-public-data \
+                                 --dir "$RUNNER_TEMP/previous" && [ -f "$RUNNER_TEMP/previous/research.db" ]; then
+            mkdir -p "$PIONEX_LAB_VAR"
+            cp "$RUNNER_TEMP/previous/research.db" "$PIONEX_LAB_VAR/research.db"
+            echo "Research registry recovered from run $prev" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No previous research registry found; starting a new one" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Initialise runtime state
         run: python -m pionex_lab init
       - name: Capability probe (public endpoints)

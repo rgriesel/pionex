@@ -21,6 +21,11 @@ class Paths:
         return self.root / "market.db"
 
     @property
+    def proxy_market(self) -> Path:
+        """Labelled proxy-venue history (data/proxy.py); never mixed into market.db."""
+        return self.root / "proxy_market.db"
+
+    @property
     def ledger(self) -> Path:
         return self.root / "ledger.db"
 

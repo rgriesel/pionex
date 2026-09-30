@@ -79,6 +79,10 @@ class Registry:
             out[f"{d['strategy']}/{d['version']}"] = d
         return out
 
+    def cycle_data(self, cycle_id: str) -> dict:
+        row = self.conn.execute("SELECT data FROM cycles WHERE id=?", (cycle_id,)).fetchone()
+        return json.loads(row[0]) if row else {}
+
     def trial_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM trials").fetchone()[0]
 

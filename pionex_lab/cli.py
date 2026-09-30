@@ -181,15 +181,43 @@ def cmd_collect(args, paths, cfg, mandate):
     return 0
 
 
-def _universe_bars(paths, cfg, timeframe="5m"):
+def cmd_fetch_proxy(args, paths, cfg, mandate):
+    """Download/refresh the labelled proxy-venue history (data/proxy.py) and report how closely
+    it tracks Pionex. Public archive files only; no account or key."""
+    from datetime import datetime, timezone
+    from urllib.error import URLError
+    from .data.proxy import VENUE, ProxyDataError, fetch, tracking_check
+    from .data.store import MarketStore, MarketView
+    paths.ensure()
+    store = MarketStore(paths.proxy_market)
+    now = SystemClock().now_ms()
+    today = datetime.fromtimestamp(now / 1000, timezone.utc).date()
+    print(f"source: {VENUE}")
+    try:
+        for s in cfg["research_universe"]:
+            for iv in ("5M", "60M"):
+                print(json.dumps(fetch(store, s, iv, args.months, today, now)))
+    except (ProxyDataError, URLError, OSError) as exc:
+        print(f"FETCH FAILED: {exc}. Existing proxy history is kept.")
+        return 3
+    if paths.market.exists():
+        mv = MarketView(paths.market)
+        for s in cfg["research_universe"]:
+            print(json.dumps({"symbol": s, "tracking_5m": tracking_check(store.bars(s, "5M"), mv.bars(s, "5M"))}))
+    return 0
+
+
+def _universe_bars(paths, cfg, timeframe="5m", source="pionex"):
+    """Research bars from Pionex's store, or from the separate proxy-venue store."""
     from .data.store import MarketView, resample
     from .strategies.catalog import TIMEFRAMES
     base, context, _ = TIMEFRAMES[timeframe]
     mv = MarketView(paths.market)
+    src = mv if source == "pionex" else MarketView(paths.proxy_market)
     out = {}
     for s in cfg["research_universe"]:
-        b = mv.bars(s, base)
-        ctx = resample(b, context) if context == "4H" else mv.bars(s, context)
+        b = src.bars(s, base)
+        ctx = resample(b, context) if context == "4H" else src.bars(s, context)
         out[s] = (b, ctx)
     return out, mv
 
@@ -200,7 +228,22 @@ def cmd_research(args, paths, cfg, mandate):
     from .research.walkforward import DailyBudgetSpent, run_cycle
     paths.ensure()
     from .strategies.catalog import TIMEFRAMES
-    universe, mv = _universe_bars(paths, cfg, args.timeframe)
+    proxy = args.data == "proxy"
+    if proxy and not paths.proxy_market.exists():
+        print("SKIPPED: no proxy history; run `fetch-proxy` first. No research budget used.")
+        return 0
+    universe, mv = _universe_bars(paths, cfg, args.timeframe, args.data)
+    data_source = {"venue": "Pionex public API"}
+    if proxy:
+        from .data.proxy import VENUE, tracking_check
+        base_iv = TIMEFRAMES[args.timeframe][0]
+        tracking = {s: tracking_check(b, mv.bars(s, base_iv)) for s, (b, _) in universe.items()}
+        print("proxy tracking vs Pionex: " + json.dumps(tracking))
+        if not all(t["ok"] for t in tracking.values()):
+            print("SKIPPED: the proxy venue does not track Pionex closely enough to stand in for it. "
+                  "No research budget used.")
+            return 0
+        data_source = {"venue": VENUE, "tracking_vs_pionex": tracking}
     now = SystemClock().now_ms()
     spreads = [mv.median_spread_bps(s, now - 7 * 86_400_000) for s in universe]
     spreads = [x for x in spreads if x is not None]
@@ -213,6 +256,7 @@ def cmd_research(args, paths, cfg, mandate):
         print(f"SKIPPED: {args.timeframe} research needs {need:.0f} days of history; have "
               f"{min(spans) if spans else 0:.1f}. No research budget used.")
         return 0
+    print(f"data: {data_source['venue']}")
     print(f"timeframe {args.timeframe}: " + ", ".join(f"{s} {base}={len(b)} {context}={len(c)}"
                                                      for s, (b, c) in universe.items()))
     print(f"cost model: fee {cost.fee_per_side:.4%}/side, half-spread {half_spread:.2f} bps "
@@ -220,7 +264,7 @@ def cmd_research(args, paths, cfg, mandate):
     try:
         results = run_cycle(universe, Registry(paths.research), mandate, cost, now, strategy_names=list(names),
                             enforce_daily_limit=not args.allow_second_cycle_for_tests, note=args.note or "",
-                            timeframe=args.timeframe)
+                            timeframe=args.timeframe, data_source=data_source)
     except DailyBudgetSpent as exc:
         print(f"SKIPPED: {exc}. Run again after 00:00 UTC.")
         return 0
@@ -270,15 +314,21 @@ STARTUP_GRACE_MS = 15 * 60_000  # let the collector finish its backfill before t
 def research_timeframe_for(day: str) -> str:
     """Alternate the single daily research cycle between timeframes (mandate: one cycle per UTC day)."""
     from datetime import date
-    return "1h" if date.fromisoformat(day).toordinal() % 2 == 0 else "5m"
+    return "5m" if date.fromisoformat(day).toordinal() % 2 == 0 else "1h"
 
 
 def due_daily_jobs(state: dict, now_ms: int) -> list:
-    """Daily automation for the supervisor: reconcile/attribute yesterday, then one research cycle."""
+    """Daily automation for the supervisor: reconcile/attribute yesterday, then one research cycle.
+    5-minute cycles run on the refreshed, labelled proxy-venue history: Pionex's own ~35 days of
+    5-minute bars can never meet the 60-day out-of-sample gate. Hourly cycles use Pionex data."""
     day = utc_day(now_ms)
     if state.get("day") == day or (now_ms % 86_400_000) // 60_000 < DAILY_JOB_MINUTE:
         return []
-    return [["daily-review"], ["research", "--timeframe", research_timeframe_for(day), "--note", "automatic daily cycle"]]
+    tf = research_timeframe_for(day)
+    research = ["research", "--timeframe", tf, "--note", "automatic daily cycle"]
+    if tf == "5m":
+        return [["daily-review"], ["fetch-proxy"], research + ["--data", "proxy"]]
+    return [["daily-review"], research]
 
 
 def cmd_run(args, paths, cfg, mandate):
@@ -484,7 +534,11 @@ def main(argv=None) -> int:
     p.add_argument("--timeframe", choices=["5m", "1h"], default="5m",
                    help="5m: 5-minute candles with 1h context; 1h: 1-hour candles with 4h context")
     p.add_argument("--note")
+    p.add_argument("--data", choices=["pionex", "proxy"], default="pionex",
+                   help="pionex: Pionex bars; proxy: labelled Binance archive bars (see fetch-proxy)")
     p.add_argument("--allow-second-cycle-for-tests", action="store_true", help=argparse.SUPPRESS)
+    p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
+    p.add_argument("--months", type=int, default=12)
     p = sub.add_parser("paper", help="run the paper engine")
     p.add_argument("--pionex-cli", help="path to pionex-trade-cli for dry-run previews (default: auto)")
     p = sub.add_parser("serve", help="serve the read-only dashboard")

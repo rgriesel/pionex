@@ -207,7 +207,8 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
         sh = [float(Decimal(p["net_bps"])) for _, p in shadows if p["strategy"] == name]
         if c:
             failed = [g for g, v in c["gates"].items() if not v["pass"]]
-            evidence = (f"Research {c['status']}; OOS trades {c['metrics'].get('oos_net', {}).get('n', 0)}; "
+            venue = registry.cycle_data(c["cycle_id"]).get("data_source", {}).get("venue", "Pionex public API")
+            evidence = (f"Research {c['status']} on {venue}; OOS trades {c['metrics'].get('oos_net', {}).get('n', 0)}; "
                         f"failed gates: {', '.join(failed) or 'none'}; registry edge {c['edge_lower_gross_bps'] or 0:.1f} bps.")
         else:
             evidence = "No research cycle on collected data yet; edge unknown, so the risk gate rejects entries."

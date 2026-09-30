@@ -18,6 +18,7 @@ import uuid
 from decimal import ROUND_CEILING, ROUND_DOWN, Decimal
 
 from ..data.quality import window_ready
+from ..data.store import resample
 from ..execution.dryrun import DryRunError, build_order_request, find_official_cli, preview
 from ..execution.paper import PaperBroker
 from ..ledger.book import Book
@@ -30,7 +31,9 @@ from .state import current_state, transition
 
 log = logging.getLogger("pionex_lab.engine")
 ZERO = Decimal(0)
-FIVE_MIN = 300_000
+HOUR_MS = 3_600_000
+HOURLY_BARS = 1200            # 50 days of 1h bars -> ~300 4h context bars, so context EMAs converge
+LATE_HOURLY_BAR_MS = 300_000  # an hourly signal is acted on only within 5 min of its bar's close
 USDT_USD = Decimal(1)
 FX_SOURCE = "ASSUMED 1 USDT = 1 USD (unverified; USDC_USDT cross monitored for depeg when available)"
 IMPACT_BPS = Decimal(2)
@@ -91,15 +94,17 @@ class Engine:
         self._load_strategies(now)
         self._restore_shadows()
         for row in self.journal.conn.execute("SELECT payload FROM journal WHERE kind='DECISION' ORDER BY seq DESC "
-                                             "LIMIT 200"):
+                                             "LIMIT 2000"):
             d = json.loads(row[0])
             t = parse_iso_ms(d["bar_time"])
-            self.last_bar[d["symbol"]] = max(self.last_bar.get(d["symbol"], 0), t)
+            key = self._bar_key(d["symbol"], d.get("timeframe", "5M"))
+            self.last_bar[key] = max(self.last_bar.get(key, 0), t)
         self.journal.append("RECOVERY", {
             "holder": self.holder, "fencing_token": self.token, "journal_head": self.journal.head()[0],
             "open_positions": [p.episode_id for p in self.book.open_positions()],
             "open_orders": [o["client_order_id"] for o in self.book.open_orders()],
             "latches": sorted(self.risk.active_latches()), "dry_run_preview": self.cli or "built-in renderer",
+            "paper_timeframes": sorted({st["strategy"].base_interval for st in self.strategies.values()}),
             "note": "state rebuilt by journal replay; open orders resume from their last observed quote"}, now)
         state = current_state(self.journal)
         if state == "SETUP":
@@ -115,7 +120,7 @@ class Engine:
     def _load_strategies(self, now) -> None:
         latest = self.registry.latest_candidates()
         out = {}
-        for name, cls in catalog.STRATEGIES.items():
+        for name, cls in catalog.ALL.items():  # 5m set and the hourly (1h base / 4h context) variants
             cand = latest.get(f"{name}/{cls.version}")
             params = cand["params"] if cand and cand.get("params") else cls.grid[0]
             out[name] = {"strategy": cls(params), "status": cand["status"] if cand else "UNREGISTERED",
@@ -152,13 +157,17 @@ class Engine:
             book = self.market.latest_book(s)
             age = (now - book["fetched_at"]) if book else None
             b5 = self.market.bars(s, "5M", limit=400, end_ms=now)
-            b60 = self.market.bars(s, "60M", limit=120, end_ms=now)
+            b1h = self.market.bars(s, "60M", limit=HOURLY_BARS, end_ms=now)
+            b60 = b1h.slice(max(0, len(b1h) - 120), len(b1h))    # 1h context of the 5m set
             ok5, why5 = window_ready(b5, catalog.Strategy.warmup + 2, now)
             ok60, why60 = window_ready(b60, 60, now, grace_ms=180_000)
+            ok1h, why1h = window_ready(b1h, catalog.Strategy.warmup + 2, now, grace_ms=180_000)
             rules, _ = self.market.symbol_rules(s)
             complete, missing = rules.complete() if rules else (False, ["symbol rules"])
             sym = {"book": book, "book_age_ms": age, "book_fresh": age is not None and age <= STALE_LATCH_MS,
                    "bars_ok": ok5 and ok60, "bars_reason": f"5M:{why5} 60M:{why60}", "b5": b5, "b60": b60,
+                   # Hourly readiness is separate: it gates only the hourly variants, never the feed latch.
+                   "b1h": b1h, "hourly_ok": ok1h, "hourly_reason": f"60M:{why1h}",
                    "rules": rules, "tradable": bool(rules and rules.enabled and complete),
                    "rules_note": "OK" if complete else f"missing {missing}"}
             if book and book["ask"] > 0:
@@ -417,39 +426,57 @@ class Engine:
                                        "fencing_token": self.token}, now)
 
     # ================================================================ entries
+    @staticmethod
+    def _bar_key(symbol: str, timeframe: str) -> str:
+        return symbol if timeframe == "5M" else f"{symbol}|{timeframe}"
+
     def _evaluate_new_bars(self, now: int) -> None:
         h = self.health
+        timeframes = {st["strategy"].base_interval for st in self.strategies.values()}
         for s in self.universe:
             sym = h["symbols"][s]
-            b5 = sym["b5"]
-            if not len(b5):
-                continue
-            bar_t = b5.t[-1]
-            if self.last_bar.get(s, 0) >= bar_t:
-                continue
-            self.last_bar[s] = bar_t
-            self._evaluate_symbol(s, bar_t, now)
+            for tf, base in (("5M", sym["b5"]), ("60M", sym["b1h"])):
+                if tf not in timeframes or not len(base):
+                    continue
+                bar_t = base.t[-1]
+                key = self._bar_key(s, tf)
+                if self.last_bar.get(key, 0) >= bar_t:
+                    continue
+                self.last_bar[key] = bar_t
+                self._evaluate_symbol(s, bar_t, now, tf)
 
-    def _evaluate_symbol(self, s: str, bar_t: int, now: int) -> None:
+    def _evaluate_symbol(self, s: str, bar_t: int, now: int, tf: str = "5M") -> None:
         h = self.health
         sym = h["symbols"][s]
         outcomes = {}
-        if not sym["bars_ok"]:
-            self.emit("DECISION", {"symbol": s, "bar_time": iso_ms(bar_t), "action": "NO_TRADE",
-                                   "reason": "DATA_NOT_READY:" + sym["bars_reason"]}, now)
+        head = {"symbol": s, "bar_time": iso_ms(bar_t)} if tf == "5M" else {"symbol": s, "timeframe": tf,
+                                                                             "bar_time": iso_ms(bar_t)}
+        ready, why = (sym["bars_ok"], sym["bars_reason"]) if tf == "5M" else (sym["hourly_ok"], sym["hourly_reason"])
+        if not ready:
+            self.emit("DECISION", {**head, "action": "NO_TRADE", "reason": "DATA_NOT_READY:" + why}, now)
             return
-        universe = {u: (h["symbols"][u]["b5"], h["symbols"][u]["b60"]) for u in self.universe
-                    if h["symbols"][u]["bars_ok"]}
+        if tf != "5M" and now - (bar_t + HOUR_MS) > LATE_HOURLY_BAR_MS:
+            # e.g. first start or a restart mid-hour: research enters right after the bar closes.
+            self.emit("DECISION", {**head, "action": "NO_TRADE", "reason": "LATE_BAR"}, now)
+            return
+        if tf == "5M":
+            universe = {u: (h["symbols"][u]["b5"], h["symbols"][u]["b60"]) for u in self.universe
+                        if h["symbols"][u]["bars_ok"]}
+        else:  # same construction as research: 1h base, 4h context resampled from it
+            universe = {u: (h["symbols"][u]["b1h"], resample(h["symbols"][u]["b1h"], "4H")) for u in self.universe
+                        if h["symbols"][u]["hourly_ok"]}
         signals = []
         for name, st in self.strategies.items():
             strat = st["strategy"]
+            if strat.base_interval != tf:
+                continue
             prep = strat.prepare(universe)
             idx = len(universe[s][0]) - 1
             sig = strat.check(prep, s, idx)
             outcomes[name] = "SIGNAL" if sig else "NO_SIGNAL"
             if sig:
                 signals.append((st, sig))
-        self.emit("DECISION", {"symbol": s, "bar_time": iso_ms(bar_t), "outcomes": outcomes,
+        self.emit("DECISION", {**head, "outcomes": outcomes,
                                "action": "EVALUATE" if signals else "NO_TRADE",
                                "reason": f"{len(signals)} signal(s)" if signals else "NO_SIGNAL"}, now)
         for st, sig in signals:
@@ -507,7 +534,7 @@ class Engine:
             strategy_qualified=st["status"] == "QUALIFIED_FOR_PAPER")
         proposal = {"decision_id": decision_id, "strategy": sig.strategy, "version": sig.version, "symbol": s,
                     "side": "BUY", "stop": str(stop), "target": str(target) if target else None,
-                    "max_hold_minutes": sig.max_hold_bars * 5, "reason": sig.reason}
+                    "max_hold_minutes": self._hold_ms(sig) // 60_000, "reason": sig.reason}
         try:
             res = self.risk.evaluate_entry(ctx, proposal, intent, self.token)
         except ProposalError as exc:
@@ -538,9 +565,14 @@ class Engine:
             "reservation_id": res["reservation_id"], "fencing_token": self.token, "dry_run_request": req,
             "entry": {"strategy": sig.strategy, "version": sig.version, "qualification": st["status"],
                       "stop": str(stop), "target": str(target) if target else None,
-                      "max_hold_until": now + sig.max_hold_bars * FIVE_MIN, "decision_price": str(book["ask"]),
+                      "max_hold_until": now + self._hold_ms(sig), "decision_price": str(book["ask"]),
                       "planned_loss_usd": res["estimated_planned_loss_usd"], "reservation_id": res["reservation_id"],
                       "decision_id": decision_id}}, now)
+
+    @staticmethod
+    def _hold_ms(sig) -> int:
+        """Maximum holding time in ms: bars times the signal's own bar length (5m or 1h)."""
+        return sig.max_hold_bars * (sig.decided_at - sig.bar_time)
 
     # ================================================================ shadows
     def _restore_shadows(self) -> None:
@@ -575,7 +607,7 @@ class Engine:
                 "opportunity_id": oid, "strategy": sig.strategy, "version": sig.version, "symbol": sig.symbol,
                 "qty": str(res["filled_size"] - res["fee"]), "entry_price": str(res["avg_price"]),
                 "cost_usdt": str(res["notional"]), "stop": repr(sig.stop), "target": repr(sig.target) if sig.target else None,
-                "max_hold_until": now + sig.max_hold_bars * FIVE_MIN, "virtual": True}
+                "max_hold_until": now + self._hold_ms(sig), "virtual": True}
             self.journal.append("SHADOW_OPEN", payload, now)
             self.shadow_open[oid] = payload
         for oid, p in list(self.shadow_open.items()):

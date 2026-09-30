@@ -16,7 +16,7 @@ from pionex_lab.risk.service import LeaseError
 from pionex_lab.runtime.engine import Engine
 from pionex_lab.runtime.state import current_state
 from pionex_lab.strategies import catalog
-from pionex_lab.util import FakeClock
+from pionex_lab.util import FakeClock, parse_iso_ms
 
 from fake_pionex import FakePionex
 from helpers import T0, cleanup, mandate, runtime_cfg, tmp_paths
@@ -44,6 +44,23 @@ class Stub(catalog.Strategy):
         p = self.params
         return catalog.Signal("stub", "v1", symbol, b.t[i], b.t[i] + 300_000, c, c * (1 - p["stop_frac"]),
                               c * (1 + p["target_frac"]), p["hold"], "test signal")
+
+
+class HourlyStub(Stub):
+    """The same deterministic signal on the first evaluated 1-hour bar (4-hour context)."""
+    name = "stub_1h"
+    base_interval, context_interval = "60M", "4H"
+    grid = [{"stop_frac": 0.01, "target_frac": 0.003, "hold": 4}]
+
+    def check(self, prep, symbol, i):
+        if self.fired or symbol != "BTC_USDT":
+            return None
+        self.fired = True
+        b = prep[symbol]["b5"]
+        c = b.c[i]
+        p = self.params
+        return catalog.Signal("stub_1h", "v1", symbol, b.t[i], b.t[i] + 3_600_000, c, c * (1 - p["stop_frac"]),
+                              c * (1 + p["target_frac"]), p["hold"], "hourly test signal")
 
 
 class Harness:
@@ -310,6 +327,50 @@ class Recovery(unittest.TestCase):
         self.assertTrue(self.h.kinds(eng, "EXPERIMENT_COMPLETE"))
         self.assertTrue(list(self.h.paths.reports.glob("final-*.json")))
         self.assertEqual(eng.book.open_positions(), [])
+
+
+class HourlyPaper(unittest.TestCase):
+    def setUp(self):
+        self.h = Harness(start_ms=T0 + 10 * 86_400_000 + 30 * 60_000)   # start mid-hour
+        for s in self.h.cfg["research_universe"]:
+            self.h.collector.backfill(s, "60M", 14)                          # >= 252 hourly bars of warmup
+
+    def tearDown(self):
+        self.h.close()
+
+    def test_hourly_strategy_waits_for_a_fresh_hour_and_holds_in_hours(self):
+        eng = self.h.engine(stub=False)
+        eng.strategies = {"stub_1h": {"strategy": HourlyStub(), "status": "QUALIFIED_FOR_PAPER",
+                                      "edge_bps": Decimal("25"), "params": HourlyStub.grid[0], "candidate_id": None}}
+        eng._due_at["strategies"] = 1 << 62
+        self.h.run(eng, 20)
+        hourly = [d for d in self.h.kinds(eng, "DECISION") if d.get("timeframe") == "60M"]
+        self.assertEqual({d["symbol"]: d["reason"] for d in hourly},     # 30 min after close: not acted on
+                         {s: "LATE_BAR" for s in self.h.cfg["research_universe"]})
+        self.assertEqual(len(hourly), len(self.h.cfg["research_universe"]))
+        self.assertFalse([d for d in self.h.kinds(eng, "DECISION") if "timeframe" not in d])  # no 5m set loaded
+        self.assertEqual(eng.journal.count("ORDER_INTENT"), 0)
+        self.assertTrue(self.h.run(eng, 40 * 60, step=10.0, until=lambda: eng.journal.count("ORDER_INTENT") > 0))
+        decided = [d for d in self.h.kinds(eng, "DECISION")
+                   if d.get("timeframe") == "60M" and d["symbol"] == "BTC_USDT"][-1]
+        self.assertEqual(decided["outcomes"], {"stub_1h": "SIGNAL"})
+        entry = [i for i in self.h.kinds(eng, "ORDER_INTENT") if i["purpose"] == "ENTRY"][0]
+        self.assertEqual(entry["entry"]["max_hold_until"] - entry["submitted_at"], 4 * 3_600_000)
+        self.assertLessEqual(entry["submitted_at"] - (parse_iso_ms(decided["bar_time"]) + 3_600_000), 300_000)
+        # a restarted engine does not re-evaluate the hourly bar it already decided
+        self.h.clock.advance(20)
+        eng2 = self.h.engine(stub=False, holder="second")
+        self.assertEqual(eng2.last_bar["BTC_USDT|60M"], parse_iso_ms(decided["bar_time"]))
+
+    def test_real_hourly_catalog_is_evaluated_on_engine_data(self):
+        eng = self.h.engine(stub=False)          # registry is empty: every strategy is UNREGISTERED
+        self.assertTrue(self.h.run(eng, 40 * 60, step=10.0, until=lambda: any(
+            d.get("timeframe") == "60M" and "outcomes" in d for d in self.h.kinds(eng, "DECISION"))))
+        d = [d for d in self.h.kinds(eng, "DECISION") if d.get("timeframe") == "60M" and "outcomes" in d][0]
+        self.assertEqual(set(d["outcomes"]), set(catalog.HOURLY))
+        self.assertEqual(self.h.kinds(eng, "RECOVERY")[0]["paper_timeframes"], ["5M", "60M"])
+        approved = [r for r in self.h.kinds(eng, "RISK_DECISION") if r.get("approved")]
+        self.assertEqual(approved, [])           # unqualified strategies never trade
 
 
 if __name__ == "__main__":

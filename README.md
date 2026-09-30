@@ -99,6 +99,17 @@ What happens on first start:
    from 1-hour candles). An hourly candle is acted on only within 5 minutes of its close, so a
    start or restart mid-hour waits for the next hour.
 
+   Because ~35 days of Pionex 5-minute candles can never meet the 60-day out-of-sample gate,
+   5-minute research runs on openly labelled **proxy-venue** history: `fetch-proxy` downloads
+   Binance's public, checksummed kline archives (no account or key) into a separate
+   `var/proxy_market.db`, never into Pionex's store. `research --data proxy` refuses the proxy
+   (without spending the day's budget) unless it tracks Pionex's own bars closely (median close
+   difference <= 5 bps, 5-minute return correlation >= 0.95); the cycle records the venue and the
+   tracking evidence, and the dashboard names the venue. Costs stay Pionex fees and observed
+   Pionex spreads, and a qualified candidate must still pass its paper trial on Pionex quotes.
+   The daily automation alternates: 5-minute days refresh the proxy and research on it; hourly
+   days research on Pionex's own hourly history.
+
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,
    search-adjusted edge above round-trip costs plus 5 bps. Otherwise the correct outcome is

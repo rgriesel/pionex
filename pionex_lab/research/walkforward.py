@@ -82,7 +82,8 @@ def _gate(passed, value, threshold, note=""):
 
 
 def run_cycle(universe: dict, registry, mandate, cost: CostModel, now_ms: int, strategy_names=None,
-              enforce_daily_limit: bool = True, note: str = "", timeframe: str = "5m") -> list:
+              enforce_daily_limit: bool = True, note: str = "", timeframe: str = "5m",
+              data_source: dict | None = None) -> list:
     q = mandate.qualification
     names = list(strategy_names or catalog.STRATEGIES)
     if len(names) > int(q["max_hypotheses_per_cycle"]):
@@ -106,7 +107,8 @@ def run_cycle(universe: dict, registry, mandate, cost: CostModel, now_ms: int, s
                          {"alpha": alpha, "folds": 3, "test_fraction": 0.25, "block_days": 3},
                          {"symbols": symbols, "data_hash": dhash, "quality_ok": dq["ok"], "timeframe": timeframe,
                           "base_interval": classes[0].base_interval,
-                          "context_interval": classes[0].context_interval}, note)
+                          "context_interval": classes[0].context_interval,
+                          "data_source": data_source or {"venue": "Pionex public API"}}, note)
     warm = max(c.warmup for c in classes)
     starts = [u[0].t[warm] for u in universe.values() if len(u[0]) > warm]
     ends = [u[0].t[-1] + base_ms for u in universe.values() if len(u[0])]

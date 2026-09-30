@@ -76,6 +76,59 @@ def paper_evidence(closed: list, now: int) -> dict:
     return {"paper_trades_qualified": len(q), "paper_hours_qualified": max(0.0, (now - first) / 3_600_000)}
 
 
+READINESS_ORDER = ("NOT_QUALIFIED", "PAPER_TRIAL_NOT_PROFITABLE", "PAPER_TRIAL", "BLOCKED_BY_REVIEW_LATCH",
+                   "READY_FOR_REVIEW")
+
+
+def strategy_readiness(cands: dict, closed: list, now: int, mandate, risk=None) -> dict:
+    """How far each strategy is from 'ready for the user's live review'.
+
+    READY_FOR_REVIEW needs a research-qualified frozen candidate, the mandate's paper sample
+    (hours AND closed trades) by that candidate, positive net paper P&L, and no review latches.
+    It prompts a human decision; it never authorizes anything. Live orders stay impossible in
+    this build regardless of this status (see execution/live.py)."""
+    q = mandate.qualification
+    need_n, need_h = int(q["min_paper_trades"]), float(q["min_paper_hours"])
+    review = sorted(n for n, r in risk.active_latches().items() if r["kind"] == "REVIEW") if risk is not None else []
+    rows = []
+    for name, cls in catalog.ALL.items():
+        c = cands.get(f"{name}/{cls.version}")
+        row = {"strategy": name, "stage": "NOT_QUALIFIED", "paper_trades": 0, "paper_hours": 0.0,
+               "paper_net_usd": 0.0}
+        if not c or c["status"] != "QUALIFIED_FOR_PAPER":
+            row["detail"] = f"Latest research: {c['status'] if c else 'not researched yet'}."
+        else:
+            mine = [p for p in closed if p.get("strategy_name") == name and p.get("version") == cls.version
+                    and p.get("qualification") == "QUALIFIED_FOR_PAPER"]
+            n = len(mine)
+            hours = max(0.0, (now - min(parse_iso_ms(p["opened_at"]) for p in mine)) / 3_600_000) if mine else 0.0
+            net = sum((Decimal(p["net_pnl_usd"]) for p in mine), Decimal(0))
+            row.update(paper_trades=n, paper_hours=round(hours, 1), paper_net_usd=_f(net) or 0.0)
+            sample = f"{n}/{need_n} closed paper trades, {hours:.1f}/{need_h:.0f} hours, net {float(net):+.2f} USD (simulated)"
+            if n < need_n or hours < need_h:
+                row["stage"], row["detail"] = "PAPER_TRIAL", f"Passed research; paper trial in progress: {sample}."
+            elif net <= 0:
+                row["stage"], row["detail"] = "PAPER_TRIAL_NOT_PROFITABLE", f"Paper sample complete but not profitable: {sample}."
+            elif review:
+                row["stage"], row["detail"] = "BLOCKED_BY_REVIEW_LATCH", f"{sample}; active review latches: {', '.join(review)}."
+            else:
+                row["stage"], row["detail"] = "READY_FOR_REVIEW", f"Paper sample complete and net positive: {sample}."
+        rows.append(row)
+    best = max((r["stage"] for r in rows), key=READINESS_ORDER.index)
+    names = [r["strategy"] for r in rows if r["stage"] == best]
+    headline = {
+        "READY_FOR_REVIEW": f"Ready for your review: {', '.join(names)}. Simulated paper results are not evidence of "
+                            "future profit, and live orders remain impossible until the live path is authorized and built.",
+        "BLOCKED_BY_REVIEW_LATCH": f"{', '.join(names)} completed a profitable paper sample, but a review latch is active.",
+        "PAPER_TRIAL": f"In paper trial: {', '.join(names)}. Not ready yet.",
+        "PAPER_TRIAL_NOT_PROFITABLE": f"{', '.join(names)} completed the paper sample without a net profit. Not ready.",
+        "NOT_QUALIFIED": "No strategy has passed research after costs. The lab stays in cash (NO_TRADE).",
+    }[best]
+    return {"stage": best, "headline": headline, "strategies": rows,
+            "rule": (f"Ready means: passed research gates, then at least {need_h:.0f} hours AND {need_n} closed paper "
+                     "trades with the frozen candidate, net positive after simulated costs, and no review latches.")}
+
+
 def build_report(paths, mandate, now: int, journal=None, market=None, risk=None, registry=None,
                  universe=("BTC_USDT", "ETH_USDT")) -> dict:
     own = []
@@ -165,8 +218,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
             "name": (name[:-3].replace("_", " ").capitalize() + " (1h)" if name.endswith("_1h")
                      else name.replace("_", " ").capitalize() + " (5m)"),
             "version": f"{cls.version} · {params}"[:200],
-            "state": (("PAPER · " if name in catalog.STRATEGIES else "RESEARCH ONLY · ")
-                      + (c["status"] if c else "UNREGISTERED"))[:200],
+            "state": ("PAPER · " + (c["status"] if c else "UNREGISTERED"))[:200],
             "closed_trades": len(mine),
             "net_pnl_usd": _f(sum((Decimal(p["net_pnl_usd"]) for p in mine), Decimal(0))) or 0.0,
             "change_note": "Frozen v1 baseline; no learned changes. Challenger versions require a matched forward test.",
@@ -224,6 +276,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
         "human_comparison": {"comparable": False, "note": "No dated human ledger supplied; comparison unavailable."},
         # Optional extensions (ignored by the original template, rendered by dashboard/index.html)
         "live_gates": gates,
+        "readiness": strategy_readiness(cands, [p for _, p in closed], now, mandate, risk),
         "risk_state": {
             "authoritative_max_drawdown_pct": round(dd, 4) if econ else None,
             "snapshots_total": len(econ), "latches": sorted(latches),
@@ -336,4 +389,16 @@ def validate_report(r: dict) -> dict:
     if not isinstance(r["human_comparison"]["comparable"], bool):
         fail("Comparable must be true or false")
     text(r["human_comparison"]["note"], "Human note")
+    rd = r.get("readiness")
+    if rd is not None:
+        if rd.get("stage") not in READINESS_ORDER or not isinstance(rd.get("strategies"), list) \
+                or len(rd["strategies"]) > 100:
+            fail("readiness must carry a known stage and a short strategy list")
+        text(rd["headline"], "Readiness headline")
+        text(rd["rule"], "Readiness rule")
+        for s in rd["strategies"]:
+            if s.get("stage") not in READINESS_ORDER:
+                fail("Unknown readiness stage")
+            text(s["strategy"], "Readiness strategy")
+            text(s["detail"], "Readiness detail")
     return r

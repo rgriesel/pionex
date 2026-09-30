@@ -132,6 +132,52 @@ class PaperEvidence(unittest.TestCase):
         self.assertEqual(paper_evidence([], T0)["paper_trades_qualified"], 0)
 
 
+class Readiness(unittest.TestCase):
+    def setUp(self):
+        from pionex_lab.strategies import catalog
+        self.name, self.cls = next(iter(catalog.STRATEGIES.items()))
+        self.hourly, self.hcls = next(iter(catalog.HOURLY.items()))
+        self.cands = {f"{self.name}/{self.cls.version}": {"status": "QUALIFIED_FOR_PAPER"}}
+
+    def closed(self, pnls, qualification="QUALIFIED_FOR_PAPER"):
+        from pionex_lab.util import iso_ms
+        return [{"strategy_name": self.name, "version": self.cls.version, "qualification": qualification,
+                 "opened_at": iso_ms(T0 + i * 60_000), "net_pnl_usd": str(v)} for i, v in enumerate(pnls)]
+
+    def stage(self, rd, name=None):
+        return next(s["stage"] for s in rd["strategies"] if s["strategy"] == (name or self.name))
+
+    def test_stages(self):
+        from pionex_lab.reporting.report import strategy_readiness
+        m, late = mandate(), T0 + 73 * 3_600_000
+        rd = strategy_readiness({}, [], late, m)
+        self.assertEqual(rd["stage"], "NOT_QUALIFIED")
+        rd = strategy_readiness(self.cands, self.closed([0.1] * 49), late, m)
+        self.assertEqual((rd["stage"], self.stage(rd)), ("PAPER_TRIAL", "PAPER_TRIAL"))
+        self.assertEqual(self.stage(strategy_readiness(self.cands, self.closed([0.1] * 50), T0 + 71 * 3_600_000, m)),
+                         "PAPER_TRIAL")                                  # trades met, hours not
+        rd = strategy_readiness(self.cands, self.closed([0.1] * 50), late, m)
+        self.assertEqual(rd["stage"], "READY_FOR_REVIEW")
+        self.assertEqual(self.stage(strategy_readiness(self.cands, self.closed([0.1] * 25 + [-0.1] * 25), late, m)),
+                         "PAPER_TRIAL_NOT_PROFITABLE")                   # break-even is not ready
+        self.assertEqual(self.stage(strategy_readiness(self.cands, self.closed([0.1] * 50, "UNREGISTERED"), late, m)),
+                         "PAPER_TRIAL")                                  # unqualified episodes do not count
+
+    def test_review_latch_blocks_and_hourly_is_paper_traded(self):
+        from pionex_lab.reporting.report import strategy_readiness
+
+        class Risk:
+            def active_latches(self):
+                return {"MANUAL_REVIEW": {"kind": "REVIEW"}}
+        m, late = mandate(), T0 + 73 * 3_600_000
+        rd = strategy_readiness(self.cands, self.closed([0.1] * 50), late, m, Risk())
+        self.assertEqual(rd["stage"], "BLOCKED_BY_REVIEW_LATCH")
+        cands = {f"{self.hourly}/{self.hcls.version}": {"status": "QUALIFIED_FOR_PAPER"}}
+        self.assertEqual(self.stage(strategy_readiness(cands, [], late, m), self.hourly), "PAPER_TRIAL")
+        closed = [{**p, "strategy_name": self.hourly, "version": self.hcls.version} for p in self.closed([0.1] * 50)]
+        self.assertEqual(self.stage(strategy_readiness(cands, closed, late, m), self.hourly), "READY_FOR_REVIEW")
+
+
 class Hourly(unittest.TestCase):
     def test_resample_complete_groups_only(self):
         from pionex_lab.data.store import resample

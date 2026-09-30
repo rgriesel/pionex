@@ -35,20 +35,35 @@ rep('<button class="quiet" id="templateBtn">Download empty report</button><butto
 rep('Continuous updates require your agent to connect an authenticated reporting service. Never enter a Pionex API key here.',
     'When this page is opened from the local <code>pionex_lab serve</code> URL, it polls that authenticated, read-only ledger endpoint instead. Never enter a Pionex API key here.')
 
+# --- markup: strategy readiness banner above the tabs (read-only; it cannot approve or start anything)
+rep('<nav class="tabs" role="tablist"',
+    '<section class="card readiness" id="readinessPanel" aria-label="Strategy readiness" hidden>'
+    '<div class="panel-head"><div><h2>Is a strategy ready for your live review?</h2><p class="sub" id="readinessHeadline"></p></div>'
+    '<span class="badge" id="readinessBadge">NOT READY</span></div><div id="readinessRows"></div>'
+    '<p class="soft" id="readinessRule" style="margin-top:12px"></p>'
+    '<p class="soft">Paper results are simulated and are not evidence of future profit. This page cannot approve or start live trading.</p></section>\n'
+    '<nav class="tabs" role="tablist"')
+
 # --- styles for the added panels (responsive; long values wrap instead of overflowing)
 rep("[hidden]{display:none!important}",
     ".ext-panels{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px}"
     ".ext-panels .row span{overflow-wrap:anywhere;min-width:0}.ext-panels .row span:last-child{max-width:62%}"
     "#gateRows .row>span:last-child{flex:none;white-space:nowrap;overflow-wrap:normal;font-size:.8rem;font-weight:600}"
+    ".readiness{margin-bottom:18px}.readiness .row span{overflow-wrap:anywhere;min-width:0}"
+    "#readinessRows .row>span:last-child{flex:none;white-space:nowrap;font-size:.8rem;font-weight:600}"
     "@media(max-width:980px){.ext-panels{grid-template-columns:minmax(0,1fr)}}[hidden]{display:none!important}")
 
 # --- script: state
-rep("let active=null;", "let active=null,connected=false;const conn={token:null,timer:null,lastOk:0,pollMs:10000,error:null};")
+rep("let active=null;", "let active=null,connected=false;const conn={token:null,timer:null,lastOk:0,pollMs:10000,error:null};"
+    "const READY_LABEL={NOT_QUALIFIED:'NOT QUALIFIED',"
+    "PAPER_TRIAL_NOT_PROFITABLE:'PAPER TRIAL NOT PROFITABLE',PAPER_TRIAL:'IN PAPER TRIAL',"
+    "BLOCKED_BY_REVIEW_LATCH:'BLOCKED · REVIEW LATCH',READY_FOR_REVIEW:'READY FOR YOUR REVIEW'};")
 
 # --- validation of optional extensions
 rep("str(r.human_comparison.note,'Human note');return r;",
     "str(r.human_comparison.note,'Human note');"
     "if(r.live_gates!=null){if(!Array.isArray(r.live_gates)||r.live_gates.length>50)fail('live_gates must be a short array');for(const g of r.live_gates){obj(g,'Gate');for(const k of ['gate','status','detail'])str(g[k],k)}}"
+    "if(r.readiness!=null){obj(r.readiness,'Readiness');if(!READY_LABEL[r.readiness.stage])fail('Unknown readiness stage');str(r.readiness.headline,'Readiness headline');str(r.readiness.rule,'Readiness rule');if(!Array.isArray(r.readiness.strategies)||r.readiness.strategies.length>100)fail('Readiness strategies must be a short array');for(const s of r.readiness.strategies){obj(s,'Readiness strategy');if(!READY_LABEL[s.stage])fail('Unknown readiness stage');str(s.strategy,'strategy');str(s.detail,'detail')}}"
     "for(const k of ['risk_state','runtime'])if(r[k]!=null)obj(r[k],k);"
     "if(r.risk_state&&r.risk_state.authoritative_max_drawdown_pct!=null)num(r.risk_state.authoritative_max_drawdown_pct,'Authoritative drawdown',0,100);"
     "return r;")
@@ -73,7 +88,10 @@ rep("$('clearBtn').onclick=()=>location.reload();",
 EXT = r"""
 function connStale(){return connected&&Date.now()-conn.lastOk>3*conn.pollMs}
 function row(label,value){return '<div class="row"><span>'+esc(label)+'</span><span>'+esc(value)+'</span></div>'}
-function renderExtensions(r){let show=!!(r.live_gates||r.runtime||r.risk_state);$('extPanels').hidden=!show;if(!show)return;
+function renderReadiness(r){let rd=r.readiness;$('readinessPanel').hidden=!rd;if(!rd)return;let ready=rd.stage==='READY_FOR_REVIEW';
+ $('readinessBadge').className='badge '+(ready?'live':'');setText('readinessBadge',READY_LABEL[rd.stage]);setText('readinessHeadline',rd.headline);setText('readinessRule',rd.rule);
+ $('readinessRows').innerHTML=rd.strategies.map(s=>'<div class="row"><span>'+esc(s.strategy)+'<br><span class="soft">'+esc(s.detail)+'</span></span><span class="'+(s.stage==='READY_FOR_REVIEW'?'positive':s.stage==='NOT_QUALIFIED'||s.stage==='PAPER_TRIAL_NOT_PROFITABLE'?'negative':'')+'">'+esc(READY_LABEL[s.stage])+'</span></div>').join('')}
+function renderExtensions(r){renderReadiness(r);let show=!!(r.live_gates||r.runtime||r.risk_state);$('extPanels').hidden=!show;if(!show)return;
  let gates=r.live_gates||[];let pass=gates.filter(g=>g.status==='PASS').length;setText('gatesBadge',gates.length&&pass===gates.length?'ALL GATES PASS':'LIVE DISABLED · '+pass+'/'+gates.length+' PASS');
  $('gateRows').innerHTML=gates.length?gates.map(g=>'<div class="row"><span>'+esc(g.gate)+'<br><span class="soft">'+esc(g.detail)+'</span></span><span class="'+(g.status==='PASS'?'positive':'negative')+'">'+esc(g.status==='NOT_IMPLEMENTED'?'NOT BUILT':g.status)+'</span></div>').join(''):'<p class="soft">No gate report supplied.</p>';
  let rt=r.runtime||{},rs=r.risk_state||{};let rows='';
@@ -98,5 +116,5 @@ rep("// Optional browser-agent access uses the same validation and visible state
     EXT.strip() + "\n// Optional browser-agent access uses the same validation and visible state.")
 
 DST.parent.mkdir(parents=True, exist_ok=True)
-DST.write_text(html, encoding="utf-8")
+DST.write_text(html, encoding="utf-8", newline="\n")  # same bytes on Windows as on Linux/macOS
 print(f"wrote {DST} ({len(html)} bytes)")

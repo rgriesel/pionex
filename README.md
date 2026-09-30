@@ -93,8 +93,11 @@ What happens on first start:
 
    Pionex serves about 10,000 candles per interval: ~35 days of 5-minute candles but ~417 days of
    hourly candles, so the hourly variants (same ideas and frozen grids on 1-hour candles with 4-hour context, holding at most
-   4 hours) can reach the 60-day out-of-sample requirement from existing history. Hourly variants
-   are research-only for now; the paper engine trades the 5-minute set.
+   4 hours) can reach the 60-day out-of-sample requirement from existing history. The paper
+   engine trades both sets: 5-minute strategies on each closed 5-minute candle, and hourly
+   variants on each closed hour, built the same way as in research (4-hour context resampled
+   from 1-hour candles). An hourly candle is acted on only within 5 minutes of its close, so a
+   start or restart mid-hour waits for the next hour.
 
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,

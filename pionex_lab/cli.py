@@ -207,6 +207,19 @@ def cmd_fetch_proxy(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_account(args, paths, cfg, mandate):
+    """Read-only snapshots of the user's own Pionex account for the dashboard (runtime/account_reader.py)."""
+    from .exchange.account import AccountReadError
+    from .runtime.account_reader import run
+    paths.ensure()
+    _setup_logging(paths, "account", args.verbose)
+    try:
+        return run(paths, _stop_event(), once=args.once)
+    except AccountReadError as exc:
+        print(f"ACCOUNT READER: {exc}", file=sys.stderr)
+        return 3
+
+
 def _universe_bars(paths, cfg, timeframe="5m", source="pionex"):
     """Research bars from Pionex's store, or from the separate proxy-venue store."""
     from .data.store import MarketView, resample
@@ -338,6 +351,8 @@ def cmd_run(args, paths, cfg, mandate):
     _setup_logging(paths, "supervisor", args.verbose)
     base = [sys.executable, "-m", "pionex_lab"]
     children = {"collector": base + ["collect"], "paper": base + ["paper"], "dashboard": base + ["serve"]}
+    if (paths.root / "account.json").exists():  # opt-in read-only view of the user's own account
+        children["account"] = base + ["account"]
     procs, backoff, next_start = {}, {k: 1.0 for k in children}, {k: 0.0 for k in children}
     stop = _stop_event()
     env = dict(os.environ)
@@ -537,6 +552,8 @@ def main(argv=None) -> int:
     p.add_argument("--data", choices=["pionex", "proxy"], default="pionex",
                    help="pionex: Pionex bars; proxy: labelled Binance archive bars (see fetch-proxy)")
     p.add_argument("--allow-second-cycle-for-tests", action="store_true", help=argparse.SUPPRESS)
+    p = sub.add_parser("account", help="read-only snapshots of your own Pionex account (needs var/account.json)")
+    p.add_argument("--once", action="store_true")
     p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
     p.add_argument("--months", type=int, default=12)
     p = sub.add_parser("paper", help="run the paper engine")

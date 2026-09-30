@@ -129,6 +129,43 @@ def strategy_readiness(cands: dict, closed: list, now: int, mandate, risk=None) 
                      "trades with the frozen candidate, net positive after simulated costs, and no review latches.")}
 
 
+def human_account_series(paths, now: int) -> list:
+    """(at_ms, total USDT) readings of the user's own Pionex account (runtime/account_reader.py),
+    oldest first. Empty when the opt-in reader is not configured."""
+    db = Path(paths.root) / "account.db"
+    if not db.exists():
+        return []
+    import sqlite3
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    try:
+        rows = conn.execute("SELECT at, equity_usdt FROM snapshots WHERE equity_usdt IS NOT NULL AND at<=? "
+                            "ORDER BY at", (now,)).fetchall()
+    finally:
+        conn.close()
+    return [(int(at), Decimal(v)) for at, v in rows]
+
+
+def human_comparison(series: list, snap_rows: list) -> dict:
+    """Index the account to $100 at its first reading and attach it to each equity snapshot
+    (latest reading at or before the snapshot). Not comparable: different capital, instruments
+    (e.g. leveraged futures grid bots), and unadjusted deposits/withdrawals."""
+    if not series or series[0][1] <= 0:
+        return {"comparable": False, "note": "No dated human ledger supplied; comparison unavailable."}
+    base_at, base = series[0]
+    j = -1
+    for row in snap_rows:
+        at = parse_iso_ms(row["at"])
+        while j + 1 < len(series) and series[j + 1][0] <= at:
+            j += 1
+        row["human_equity_usd"] = _f(series[j][1] / base * 100) if j >= 0 else None
+    last_at, last = series[-1]
+    return {"comparable": False, "note": (
+        f"Your own Pionex account, read-only (all accounts incl. bots, Pionex's USDT valuation): "
+        f"{float(last):.2f} USDT at {iso_ms(last_at)}. The Human line is indexed to $100 at the first reading "
+        f"({float(base):.2f} USDT at {iso_ms(base_at)}). Deposits/withdrawals are not adjusted, and bots may use "
+        f"leverage the lab's spot mandate forbids, so this is context, not a like-for-like comparison.")[:1000]}
+
+
 def build_report(paths, mandate, now: int, journal=None, market=None, risk=None, registry=None,
                  universe=("BTC_USDT", "ETH_USDT")) -> dict:
     own = []
@@ -188,6 +225,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
         snap_rows.append({"at": iso_ms(at), "equity_usd": _f(p["equity_usd"]), "net_cashflow_usd": 0.0,
                           "cumulative_operating_cost_usd": _f(p["cumulative_operating_cost_usd"]),
                           "btc_benchmark_usd": _f(p.get("btc_benchmark_usd")), "human_equity_usd": None})
+    human = human_comparison(human_account_series(paths, now), snap_rows)
     peak, dd = initial, 0.0
     for v in econ:  # authoritative drawdown at full snapshot resolution
         peak = max(peak, v)
@@ -274,7 +312,7 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
                        "reconciled": bool(recon and recon.get("ok")),
                        "protection": "NONE (paper) — local monitor exits at observed quotes; no exchange-side stops",
                        "reason": " ".join(reasons)[:1000]},
-        "human_comparison": {"comparable": False, "note": "No dated human ledger supplied; comparison unavailable."},
+        "human_comparison": human,
         # Optional extensions (ignored by the original template, rendered by dashboard/index.html)
         "live_gates": gates,
         "readiness": strategy_readiness(cands, [p for _, p in closed], now, mandate, risk),

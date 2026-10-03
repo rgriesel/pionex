@@ -57,15 +57,21 @@ class Fetch(unittest.TestCase):
 
     def test_parses_micro_and_milli_timestamps_and_skips_complete_days(self):
         fake = FakeArchive()
-        cov = proxy.fetch(self.store, "BTC_USDT", "5M", 1, date(2026, 9, 4), T0, get=fake)
-        self.assertEqual((cov["files_downloaded"], cov["bars"]), (3, 3 * 288))
-        self.assertEqual(cov["files_missing"], 1)                       # the August monthly file is 404 here
+        cov = proxy.fetch(self.store, "BTC_USDT", "5M", 0, date(2026, 9, 4), T0, get=fake)
+        self.assertEqual((cov["files_downloaded"], cov["bars"], cov["files_missing"]), (3, 3 * 288, 0))
         b = self.store.bars("BTC_USDT", "5M")
         self.assertEqual(b.t[288] - b.t[287], 300_000)                   # day 1 (us) joins day 2 (ms) cleanly
         self.assertEqual(b.t[0] % DAY, 0)
         again = FakeArchive()
         cov = proxy.fetch(self.store, "BTC_USDT", "5M", 0, date(2026, 9, 4), T0, get=again)
         self.assertEqual((cov["files_skipped"], again.requests), (3, []))
+
+    def test_unpublished_monthly_archive_falls_back_to_daily_files(self):
+        fake = FakeArchive()   # no September monthly file yet; only daily files for 1-3 September
+        cov = proxy.fetch(self.store, "BTC_USDT", "5M", 1, date(2026, 10, 2), T0, get=fake)
+        self.assertIn(f"{proxy.BASE_URL}/monthly/klines/BTCUSDT/5m/BTCUSDT-5m-2026-09.zip", fake.requests)
+        self.assertEqual((cov["files_downloaded"], cov["bars"]), (3, 3 * 288))
+        self.assertEqual(cov["files_missing"], 27 + 1)                  # 4-30 September and 1 October not served
 
     def test_checksum_mismatch_is_refused(self):
         with self.assertRaises(proxy.ProxyDataError):

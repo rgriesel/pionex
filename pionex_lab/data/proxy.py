@@ -94,27 +94,38 @@ def fetch(store, symbol: str, interval: str, months: int, today: date, now_ms: i
     Periods already complete in the store are skipped, so the daily refresh fetches one file."""
     raw_sym, raw_iv = SYMBOLS[symbol], INTERVALS[interval]
     step = KLINE_INTERVALS[interval]
-    files = []
     first = date(today.year, today.month, 1)
+
+    def daily(start, end):
+        d, out = start, []
+        while d < min(end, today):
+            out.append((f"{BASE_URL}/daily/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{d:%Y-%m-%d}.zip",
+                        d, d + timedelta(days=1), None))
+            d += timedelta(days=1)
+        return out
+
+    files = []
     for k in range(months, 0, -1):
         y, m = divmod(first.year * 12 + first.month - 1 - k, 12)
         start = date(y, m + 1, 1)
         end = date(y + (m + 1) // 12, (m + 1) % 12 + 1, 1)
-        files.append((f"{BASE_URL}/monthly/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{start:%Y-%m}.zip", start, end))
-    d = first
-    while d < today:
-        files.append((f"{BASE_URL}/daily/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{d:%Y-%m-%d}.zip",
-                      d, d + timedelta(days=1)))
-        d += timedelta(days=1)
+        # A month's archive is published a few days after it ends; until then use its daily files.
+        files.append((f"{BASE_URL}/monthly/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{start:%Y-%m}.zip",
+                      start, end, daily(start, end)))
+    files += daily(first, today)
     got = skipped = missing = 0
-    for url, start, end in files:
+    while files:
+        url, start, end, fallback = files.pop(0)
         s_ms, e_ms = _ms(start), _ms(end)
         if _count(store, symbol, interval, s_ms, e_ms) >= (e_ms - s_ms) // step:
             skipped += 1
             continue
         klines = _download(url, get)
         if klines is None:
-            missing += 1
+            if fallback:
+                files[:0] = fallback
+            else:
+                missing += 1
             continue
         store.upsert_klines(symbol, interval, klines, None, now_ms)
         got += 1

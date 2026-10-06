@@ -266,7 +266,170 @@ class RelativeStrength(Strategy):
                             {"rel_return": rel[symbol], "abs_return": rets[symbol]})
 
 
-STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength)}
+class CapitulationReversal(Strategy):
+    """Pre-registered 2026-10-06, before any test on any data. Forced-selling flush: within the n
+    bars before the decision bar, price falls from its prior high by at least k x the pre-drop ATR
+    x sqrt(n) on a volume spike (a bar >= 2x the pre-drop 20-bar average), the low is at most two
+    bars old, and the decision bar closes green below the prior high. Flushes overshoot and
+    partially revert; their moves are larger than ordinary dips, which a ~16 bps round trip needs.
+    Stop 0.25 ATR under the flush low, target rr x risk, time exit 4h."""
+    name = "capitulation_reversal"
+    grid = _grid(n=[6, 12], k=[3.0, 4.0], rr=[1.0, 2.0])
+
+    def _prepare_symbol(self, d):
+        b = d["b5"]
+        d["vol_sma"] = sma(b.v, 20)
+        for n in (6, 12):
+            d[f"hi{n}"], d[f"lo{n}"] = prior_max(b.h, n), prior_min(b.l, n)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, n = d["b5"], p["n"]
+        if i < n + 2:
+            return None
+        pre = i - n - 1
+        hi, a0, c0, vs, a = d[f"hi{n}"][i], d["atr"][pre], b.c[pre], d["vol_sma"][pre], d["atr"][i]
+        if not finite(hi, a0, vs, a, d[f"lo{n}"][i]) or min(a0, c0, vs, a) <= 0:
+            return None
+        low = min(d[f"lo{n}"][i], b.l[i])
+        if min(b.l[i - 2:i + 1]) > low:                  # the flush low must be recent
+            return None
+        if (hi - low) / hi < p["k"] * (a0 / c0) * math.sqrt(n):
+            return None
+        if max(b.v[i - n:i]) < 2.0 * vs or not (b.o[i] < b.c[i] < hi):
+            return None
+        stop = low - 0.25 * a
+        target = b.c[i] + p["rr"] * (b.c[i] - stop)
+        return self._signal(d, symbol, i, stop, target, "first green bar after a high-volume flush",
+                            {"drop_frac": (hi - low) / hi, "drop_in_atr": (hi - low) / a0})
+
+
+class BandSnapbackScalp(Strategy):
+    """Pre-registered 2026-10-06, before any test on any data. Scalp (30-60 min): an impulsive
+    5m bar (range >= 1.5 ATR) closing below the lower Bollinger band (20, k sigma) snaps back
+    toward the 20-bar mean. Only extreme stretches qualify, so the target move can clear the
+    ~16 bps round trip. Optional 1h filter: 1h close above its EMA50. Target the 20-bar SMA,
+    stop stop_atr x ATR below the close, time exit after `hold` bars."""
+    name = "band_snapback_scalp"
+    grid = _grid(k=[2.5, 3.0], trend=[0, 1], stop_atr=[1.0, 1.5], hold=[6, 12])
+    max_hold_bars = 12
+
+    def _prepare_symbol(self, d):
+        b = d["b5"]
+        d["sma20"], d["sd20"] = sma(b.c, 20), rolling_std(b.c, 20)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, j, a = d["b5"], d["h1"][i], d["atr"][i]
+        mid, sd = d["sma20"][i], d["sd20"][i]
+        if not finite(mid, sd, a) or a <= 0 or sd <= 0:
+            return None
+        if b.c[i] >= mid - p["k"] * sd or b.h[i] - b.l[i] < 1.5 * a:
+            return None
+        if p["trend"] and (j < 0 or not finite(d["ema50_1h"][j]) or d["b60"].c[j] <= d["ema50_1h"][j]):
+            return None
+        return self._signal(d, symbol, i, b.c[i] - p["stop_atr"] * a, mid, "impulsive close below the lower band",
+                            {"z": (b.c[i] - mid) / sd, "range_atr": (b.h[i] - b.l[i]) / a}, hold=p["hold"])
+
+
+def _us_open_utc_ms(t_ms: int) -> int:
+    """09:30 New York time on t_ms's UTC date, in UTC ms (US DST: second Sunday of March to the
+    first Sunday of November)."""
+    from datetime import date, datetime, timedelta, timezone
+    d = datetime.fromtimestamp(t_ms / 1000, timezone.utc).date()
+
+    def nth_sunday(year, month, n):
+        first = date(year, month, 1)
+        return first + timedelta(days=(6 - first.weekday()) % 7 + 7 * (n - 1))
+    dst = nth_sunday(d.year, 3, 2) <= d < nth_sunday(d.year, 11, 1)
+    midnight = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+    return midnight + ((13 if dst else 14) * 60 + 30) * 60_000
+
+
+class UsOpenBreakoutScalp(Strategy):
+    """Pre-registered 2026-10-06, before any test on any data. Scalp (<= 60 min): the first three
+    5m bars after the US equity open (09:30 New York, DST-aware) set an opening range; on US
+    weekdays, the first completed bar within the next 75 minutes that closes above that range on
+    volume >= v_mult x its 20-bar average is bought. Stop at the range low (or its midpoint),
+    target rr x risk, time exit after 12 bars."""
+    name = "us_open_breakout_scalp"
+    grid = _grid(stop_mid=[0, 1], rr=[1.0, 1.5, 2.0], v_mult=[1.0, 1.5])
+    max_hold_bars = 12
+
+    def _prepare_symbol(self, d):
+        d["vol_sma"] = sma(d["b5"].v, 20)
+        days = {}
+        d["us_open"] = [days.setdefault(t // 86_400_000, _us_open_utc_ms(t)) for t in d["b5"].t]
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b = d["b5"]
+        t = b.t[i]
+        open_ms = d["us_open"][i]
+        if not open_ms + 15 * 60_000 <= t < open_ms + 90 * 60_000 or (t // 86_400_000 + 3) % 7 >= 5:
+            return None                                     # outside the window, or a weekend
+        k0 = i - (t - open_ms) // FIVE_MIN_MS
+        if k0 < 1 or b.t[k0] != open_ms or not finite(d["vol_sma"][i - 1]):
+            return None                                     # opening bars missing
+        hi, lo = max(b.h[k0:k0 + 3]), min(b.l[k0:k0 + 3])
+        if any(c > hi for c in b.c[k0 + 3:i]) or b.c[i] <= hi or b.v[i] < p["v_mult"] * d["vol_sma"][i - 1]:
+            return None                                     # not the first close above the range
+        stop = (hi + lo) / 2 if p["stop_mid"] else lo
+        target = b.c[i] + p["rr"] * (b.c[i] - stop)
+        return self._signal(d, symbol, i, stop, target, "first close above the US opening range",
+                            {"range_frac": (hi - lo) / lo, "vol_ratio": b.v[i] / d["vol_sma"][i - 1]})
+
+
+class SessionDrift1h(Strategy):
+    """Pre-registered 2026-10-06, before any test on any data. Intraday seasonality: go long at
+    the open of a fixed UTC hour and exit after a fixed number of hours, optionally only in a 4h
+    uptrend. Entry hours fixed in advance: 13 and 14 (US pre-open/open), 20 (late US session),
+    22 (Asia handover). Stop 2 ATR below the entry-bar close; no target."""
+    name = "session_drift_1h"
+    base_interval, context_interval = "60M", "4H"
+    max_hold_bars = 4
+    grid = _grid(hour=[13, 14, 20, 22], hold=[2, 4], trend=[0, 1])
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, a = d["b5"], d["atr"][i]
+        if ((b.t[i] + HOUR_MS) // HOUR_MS) % 24 != p["hour"] or not finite(a) or a <= 0:
+            return None
+        if p["trend"] and not self._uptrend_1h(d, i):
+            return None
+        return self._signal(d, symbol, i, b.c[i] - 2.0 * a, None, f"session entry at {p['hour']:02d}:00 UTC",
+                            {"trend_filter": p["trend"]}, hold=p["hold"])
+
+
+class DeepPullback1h(Strategy):
+    """Pre-registered 2026-10-06, before any test on any data. In an established 4h uptrend
+    (EMA20 > EMA50, close above EMA50), an unusually deep 1h dip (close at least k x ATR below
+    the 1h EMA20) reverts toward that EMA within 4h; only deep dips leave room above costs.
+    Optional confirmation: the decision bar closes green. Target the 1h EMA20; stop stop_atr x
+    ATR below the close."""
+    name = "deep_pullback_1h"
+    base_interval, context_interval = "60M", "4H"
+    max_hold_bars = 4
+    grid = _grid(k=[1.5, 2.0, 2.5], stop_atr=[1.5, 2.5], confirm=[0, 1])
+
+    def _prepare_symbol(self, d):
+        d["ema20"] = ema(d["b5"].c, 20)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, j, a = d["b5"], d["h1"][i], d["atr"][i]
+        if j < 0 or not finite(d["ema20"][i], a, d["ema20_1h"][j], d["ema50_1h"][j]) or a <= 0:
+            return None
+        if not (d["ema20_1h"][j] > d["ema50_1h"][j] and d["b60"].c[j] > d["ema50_1h"][j]):
+            return None
+        if b.c[i] > d["ema20"][i] - p["k"] * a or (p["confirm"] and b.c[i] <= b.o[i]):
+            return None
+        return self._signal(d, symbol, i, b.c[i] - p["stop_atr"] * a, d["ema20"][i],
+                            "deep 1h dip below EMA20 in a 4h uptrend", {"depth_atr": (d["ema20"][i] - b.c[i]) / a})
+
+
+STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength,
+                                        CapitulationReversal, BandSnapbackScalp, UsOpenBreakoutScalp)}
 
 
 def _hourly(cls):
@@ -278,7 +441,8 @@ def _hourly(cls):
         "__doc__": (cls.__doc__ or "") + " [1h base / 4h context variant]"})
 
 
-HOURLY = {c.name: c for c in (_hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
+HOURLY = {c.name: c for c in (SessionDrift1h, DeepPullback1h,
+                              _hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
                               _hourly(RelativeStrength))}
 ALL = {**STRATEGIES, **HOURLY}
 TIMEFRAMES = {"5m": ("5M", "60M", STRATEGIES), "1h": ("60M", "4H", HOURLY)}

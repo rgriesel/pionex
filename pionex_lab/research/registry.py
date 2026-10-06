@@ -83,6 +83,11 @@ class Registry:
         row = self.conn.execute("SELECT data FROM cycles WHERE id=?", (cycle_id,)).fetchone()
         return json.loads(row[0]) if row else {}
 
+    def rejection_counts(self) -> dict:
+        """strategy -> number of cycles that REJECTED it (INSUFFICIENT_DATA does not count)."""
+        return dict(self.conn.execute("SELECT strategy, COUNT(*) FROM candidates WHERE status='REJECTED' "
+                                      "GROUP BY strategy").fetchall())
+
     def trial_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM trials").fetchone()[0]
 

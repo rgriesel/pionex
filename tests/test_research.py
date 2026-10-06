@@ -178,6 +178,11 @@ class Readiness(unittest.TestCase):
         self.assertEqual(self.stage(strategy_readiness(cands, closed, late, m), self.hourly), "READY_FOR_REVIEW")
 
 
+# The original four hypotheses and their hourly variants (later hypotheses have their own tests).
+ORIGINAL_5M = ["volatility_breakout", "trend_pullback", "range_reversion", "relative_strength"]
+ORIGINAL_1H = [n + "_1h" for n in ORIGINAL_5M]
+
+
 class Hourly(unittest.TestCase):
     def test_resample_complete_groups_only(self):
         from pionex_lab.data.store import resample
@@ -201,7 +206,8 @@ class Hourly(unittest.TestCase):
             self.assertTrue(name.endswith("_1h"))
             self.assertEqual((cls.base_interval, cls.context_interval), ("60M", "4H"))
             self.assertLessEqual(cls.max_hold_bars * 60, 240)   # 4-hour maximum intraday holding
-            self.assertEqual(cls.grid, catalog.STRATEGIES[name[:-3]].grid)  # same frozen grid
+        for name in ORIGINAL_1H:
+            self.assertEqual(catalog.HOURLY[name].grid, catalog.STRATEGIES[name[:-3]].grid)  # same frozen grid
         self.assertEqual(set(catalog.ALL), set(catalog.STRATEGIES) | set(catalog.HOURLY))
 
     def test_hourly_cycle_runs_and_budget_is_shared_across_timeframes(self):
@@ -216,14 +222,14 @@ class Hourly(unittest.TestCase):
                 universe[s] = (hourly, resample(hourly, "4H"))
             reg = Registry(paths.research)
             res = run_cycle(universe, reg, mandate(), CostModel(), T0 + 130 * 86_400_000,
-                            strategy_names=list(catalog.HOURLY), timeframe="1h")
-            self.assertEqual({r["strategy"] for r in res}, set(catalog.HOURLY))
+                            strategy_names=ORIGINAL_1H, timeframe="1h")
+            self.assertEqual({r["strategy"] for r in res}, set(ORIGINAL_1H))
             self.assertTrue(all(r["status"] in ("REJECTED", "INSUFFICIENT_DATA") for r in res))
             row = reg.conn.execute("SELECT data FROM cycles").fetchone()[0]
             self.assertIn('"timeframe":"1h"', row)
             with self.assertRaises(DailyBudgetSpent):       # one cycle per UTC day, any timeframe
                 run_cycle(universe, reg, mandate(), CostModel(), T0 + 130 * 86_400_000,
-                          strategy_names=list(catalog.STRATEGIES))
+                          strategy_names=ORIGINAL_5M)
             with self.assertRaises(ValueError):
                 run_cycle(universe, Registry(paths.root / "r2.db"), mandate(), CostModel(), T0,
                           strategy_names=["trend_pullback", "trend_pullback_1h"])
@@ -250,16 +256,18 @@ class WalkForward(unittest.TestCase):
 
     def test_cycle_on_random_walk_records_everything_and_does_not_qualify(self):
         reg = Registry(self.paths.research)
-        res = run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000)
+        res = run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000,
+                        strategy_names=ORIGINAL_5M)
         self.assertEqual(len(res), 4)
         for r in res:
             self.assertIn(r["status"], ("REJECTED", "INSUFFICIENT_DATA"))
             self.assertNotEqual(r["status"], "QUALIFIED_FOR_PAPER")
-        grid_total = sum(len(c.grid) for c in catalog.STRATEGIES.values())
+        grid_total = sum(len(catalog.STRATEGIES[n].grid) for n in ORIGINAL_5M)
         self.assertEqual(reg.trial_count(), grid_total * 4)   # 3 folds + final selection, all retained
         self.assertTrue(all(len(c.grid) <= 20 for c in catalog.STRATEGIES.values()))
         with self.assertRaisesRegex(RuntimeError, "already ran this UTC day"):  # DailyBudgetSpent
-            run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000)
+            run_cycle(self.universe(24), reg, mandate(), CostModel(), T0 + 30 * 86_400_000,
+                      strategy_names=ORIGINAL_5M)
         cands = reg.latest_candidates()
         self.assertEqual(len(cands), 4)
         for c in cands.values():
@@ -267,7 +275,8 @@ class WalkForward(unittest.TestCase):
             self.assertGreaterEqual(c["edge_lower_gross_bps"], 0.0)
 
     def test_short_history_is_insufficient(self):
-        res = run_cycle(self.universe(4), Registry(self.paths.research), mandate(), CostModel(), T0 + 86_400_000 * 9)
+        res = run_cycle(self.universe(4), Registry(self.paths.research), mandate(), CostModel(), T0 + 86_400_000 * 9,
+                        strategy_names=ORIGINAL_5M)
         self.assertTrue(all(r["status"] == "INSUFFICIENT_DATA" for r in res))
 
     def test_budget_enforced(self):

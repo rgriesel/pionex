@@ -110,6 +110,12 @@ What happens on first start:
    The daily automation alternates: 5-minute days refresh the proxy and research on it; hourly
    days research on Pionex's own hourly history.
 
+   A hypothesis REJECTED in two cycles is retired from research (re-testing a frozen grid adds no
+   information) but stays in the paper engine's shadow book. New hypotheses are pre-registered in
+   `pionex_lab/strategies/catalog.py` with their date, rationale and bounded grid before any test:
+   2026-10-06 added capitulation reversal, a Bollinger snapback scalp and a US-open breakout scalp
+   (5-minute, holds <= 60 min for the scalps), plus hourly session drift and deep pullback.
+
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,
    search-adjusted edge above round-trip costs plus 5 bps. Otherwise the correct outcome is

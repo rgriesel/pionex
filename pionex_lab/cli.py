@@ -274,8 +274,19 @@ def cmd_research(args, paths, cfg, mandate):
                                                      for s, (b, c) in universe.items()))
     print(f"cost model: fee {cost.fee_per_side:.4%}/side, half-spread {half_spread:.2f} bps "
           f"({'observed median' if spreads else 'default; no book ticks yet'}), impact {cost.impact_bps} bps")
+    registry = Registry(paths.research)
+    active, retired = select_hypotheses(names, registry.rejection_counts(),
+                                        int(mandate.qualification["max_hypotheses_per_cycle"]))
+    if retired:
+        print(f"retired from research after >= {RETIRE_AFTER_REJECTIONS} rejections (still shadow-measured): "
+              + ", ".join(retired))
+    if not active:
+        print(f"SKIPPED: every {args.timeframe} hypothesis is retired; add a new pre-registered hypothesis. "
+              "No research budget used.")
+        return 0
+    print("researching: " + ", ".join(active))
     try:
-        results = run_cycle(universe, Registry(paths.research), mandate, cost, now, strategy_names=list(names),
+        results = run_cycle(universe, registry, mandate, cost, now, strategy_names=active,
                             enforce_daily_limit=not args.allow_second_cycle_for_tests, note=args.note or "",
                             timeframe=args.timeframe, data_source=data_source)
     except DailyBudgetSpent as exc:
@@ -320,6 +331,19 @@ def cmd_serve(args, paths, cfg, mandate):
 
 
 MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}
+# A frozen hypothesis REJECTED (not merely short of data) in this many cycles stops consuming the
+# daily research budget; re-testing the same frozen grid adds no information. It stays in the paper
+# engine's shadow book, so its live signals are still measured.
+RETIRE_AFTER_REJECTIONS = 2
+
+
+def select_hypotheses(names, rejection_counts: dict, max_n: int) -> tuple:
+    """(active, retired): retire hypotheses rejected in >= RETIRE_AFTER_REJECTIONS cycles; research
+    the rest (least-tested first, catalog order otherwise) up to the mandate's per-cycle maximum."""
+    retired = [n for n in names if rejection_counts.get(n, 0) >= RETIRE_AFTER_REJECTIONS]
+    rest = [n for n in names if n not in retired]
+    active = sorted(rest, key=lambda n: (rejection_counts.get(n, 0), rest.index(n)))[:max_n]
+    return active, retired
 DAILY_JOB_MINUTE = 10  # run the daily jobs from 00:10 UTC, after the day's first bars have closed
 STARTUP_GRACE_MS = 15 * 60_000  # let the collector finish its backfill before the first research cycle
 

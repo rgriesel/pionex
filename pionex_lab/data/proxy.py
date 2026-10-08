@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import math
 import urllib.error
 import urllib.request
@@ -131,6 +132,48 @@ def fetch(store, symbol: str, interval: str, months: int, today: date, now_ms: i
         got += 1
     return {"symbol": symbol, "interval": interval, "files_downloaded": got, "files_skipped": skipped,
             "files_missing": missing, "bars": _count(store, symbol, interval, 0, 1 << 62)}
+
+
+FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+FUNDING_VENUE = "Binance USD-M perpetual funding rates (public fapi/v1/fundingRate) - PROXY VENUE, not Pionex"
+FUNDING_SCHEMA = """CREATE TABLE IF NOT EXISTS funding(symbol TEXT NOT NULL, t INTEGER NOT NULL, rate TEXT NOT NULL,
+  PRIMARY KEY(symbol, t));"""
+
+
+def http_get_json(url: str, timeout: float = 30.0):
+    blob = http_get(url, timeout)
+    return None if blob is None else json.loads(blob.decode("utf-8"))
+
+
+def fetch_funding(conn, symbol: str, now_ms: int, days: int = 420, get_json=http_get_json) -> dict:
+    """Settled funding rates (public, no key) from the last stored settlement (or `days` back) to
+    now, paged 1000 at a time, into the separate proxy database's `funding` table."""
+    conn.executescript(FUNDING_SCHEMA)
+    row = conn.execute("SELECT MAX(t) FROM funding WHERE symbol=?", (symbol,)).fetchone()
+    start = (row[0] + 1) if row and row[0] else now_ms - days * 86_400_000
+    got = 0
+    while start < now_ms:
+        page = get_json(f"{FUNDING_URL}?symbol={SYMBOLS[symbol]}&startTime={start}&limit=1000") or []
+        rows = [(symbol, int(p["fundingTime"]), str(p["fundingRate"])) for p in page if int(p["fundingTime"]) <= now_ms]
+        if not rows:
+            break
+        with conn:
+            conn.executemany("INSERT OR IGNORE INTO funding(symbol, t, rate) VALUES(?,?,?)", rows)
+        got += len(rows)
+        start = max(r[1] for r in rows) + 1
+        if len(page) < 1000:
+            break
+    total = conn.execute("SELECT COUNT(*) FROM funding WHERE symbol=?", (symbol,)).fetchone()[0]
+    return {"symbol": symbol, "funding_rows_added": got, "funding_rows": total}
+
+
+def funding_series(conn, symbol: str) -> list:
+    """[(settlement_ms, rate)] oldest first; empty if none stored."""
+    try:
+        return [(int(t), float(r)) for t, r in conn.execute("SELECT t, rate FROM funding WHERE symbol=? ORDER BY t",
+                                                             (symbol,))]
+    except Exception:  # noqa: BLE001 - table absent: no funding history
+        return []
 
 
 def tracking_check(proxy_bars, pionex_bars) -> dict:

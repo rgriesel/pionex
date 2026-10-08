@@ -380,6 +380,49 @@ class UsOpenBreakoutScalp(Strategy):
                             {"range_frac": (hi - lo) / lo, "vol_ratio": b.v[i] / d["vol_sma"][i - 1]})
 
 
+class FundingExtreme1h(Strategy):
+    """Pre-registered 2026-10-08, before any test on any data. First hypothesis on information
+    other than OHLCV: every price-pattern hypothesis so far had ~0 gross expectancy. When the
+    just-settled perpetual funding rate is negative (shorts pay longs) and in the lowest q of its
+    trailing 90 days (270 settlements, mid-rank so the common 0.01% baseline ties are not "lowest"),
+    shorts are crowded and paying to stay in; that can precede short squeezes.
+    Go long spot on the first closed hour after such a settlement; stop stop_atr x ATR, no
+    target, time exit after `hold` hours. Funding comes from the labelled proxy venue (see
+    data/proxy.py); bars without a `funding` attribute (e.g. the live engine, until a live
+    funding feed exists) never signal."""
+    name = "funding_extreme_1h"
+    base_interval, context_interval = "60M", "4H"
+    max_hold_bars = 4
+    grid = _grid(q=[0.05, 0.10], hold=[2, 4], stop_atr=[1.5, 2.5])
+    lookback = 270
+
+    def _prepare_symbol(self, d):
+        b, n = d["b5"], self.lookback
+        f = getattr(b, "funding", None) or []
+        ranks, rates, fresh = [math.nan] * len(b), [math.nan] * len(b), [False] * len(b)
+        cache, j = {}, -1
+        for i, t in enumerate(b.t):
+            prev, close = j, t + INTERVAL_MS[self.base_interval]
+            while j + 1 < len(f) and f[j + 1][0] <= close:      # settlements known by this bar's close
+                j += 1
+            if j >= n - 1:
+                if j not in cache:
+                    window, r0 = [r for _, r in f[j - n + 1:j + 1]], f[j][1]
+                    cache[j] = (sum(1 for r in window if r < r0) + 0.5 * sum(1 for r in window if r == r0)) / n
+                ranks[i], rates[i], fresh[i] = cache[j], f[j][1], j != prev
+        d["f_rank"], d["f_rate"], d["f_fresh"] = ranks, rates, fresh
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, a = d["b5"], d["atr"][i]
+        if not d["f_fresh"][i] or not finite(d["f_rank"][i], a) or a <= 0 or d["f_rank"][i] > p["q"]:
+            return None
+        if not d["f_rate"][i] < 0:
+            return None
+        return self._signal(d, symbol, i, b.c[i] - p["stop_atr"] * a, None, "funding settled in its lowest tail",
+                            {"funding_rank": d["f_rank"][i], "funding_rate": d["f_rate"][i]}, hold=p["hold"])
+
+
 class SessionDrift1h(Strategy):
     """Pre-registered 2026-10-06, before any test on any data. Intraday seasonality: go long at
     the open of a fixed UTC hour and exit after a fixed number of hours, optionally only in a 4h
@@ -441,7 +484,7 @@ def _hourly(cls):
         "__doc__": (cls.__doc__ or "") + " [1h base / 4h context variant]"})
 
 
-HOURLY = {c.name: c for c in (SessionDrift1h, DeepPullback1h,
+HOURLY = {c.name: c for c in (FundingExtreme1h, SessionDrift1h, DeepPullback1h,
                               _hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
                               _hourly(RelativeStrength))}
 ALL = {**STRATEGIES, **HOURLY}

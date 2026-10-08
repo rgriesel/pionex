@@ -200,6 +200,13 @@ def cmd_fetch_proxy(args, paths, cfg, mandate):
     except (ProxyDataError, URLError, OSError) as exc:
         print(f"FETCH FAILED: {exc}. Existing proxy history is kept.")
         return 3
+    from .data.proxy import FUNDING_VENUE, fetch_funding
+    print(f"source: {FUNDING_VENUE}")
+    for s in cfg["research_universe"]:
+        try:
+            print(json.dumps(fetch_funding(store.conn, s, now)))
+        except (URLError, OSError, ValueError, KeyError) as exc:
+            print(f"FUNDING FETCH FAILED for {s}: {exc}. Existing funding history is kept.")
     if paths.market.exists():
         mv = MarketView(paths.market)
         for s in cfg["research_universe"]:
@@ -227,10 +234,14 @@ def _universe_bars(paths, cfg, timeframe="5m", source="pionex"):
     base, context, _ = TIMEFRAMES[timeframe]
     mv = MarketView(paths.market)
     src = mv if source == "pionex" else MarketView(paths.proxy_market)
+    funding_conn = MarketView(paths.proxy_market).conn if paths.proxy_market.exists() else None
     out = {}
     for s in cfg["research_universe"]:
         b = src.bars(s, base)
         ctx = resample(b, context) if context == "4H" else src.bars(s, context)
+        if funding_conn is not None:  # labelled proxy-venue funding, read only by funding hypotheses
+            from .data.proxy import funding_series
+            b.funding = funding_series(funding_conn, s)
         out[s] = (b, ctx)
     return out, mv
 
@@ -247,6 +258,9 @@ def cmd_research(args, paths, cfg, mandate):
         return 0
     universe, mv = _universe_bars(paths, cfg, args.timeframe, args.data)
     data_source = {"venue": "Pionex public API"}
+    if any(getattr(b, "funding", None) for b, _ in universe.values()):
+        from .data.proxy import FUNDING_VENUE
+        data_source["auxiliary"] = FUNDING_VENUE
     if proxy:
         from .data.proxy import VENUE, tracking_check
         base_iv = TIMEFRAMES[args.timeframe][0]
@@ -256,7 +270,7 @@ def cmd_research(args, paths, cfg, mandate):
             print("SKIPPED: the proxy venue does not track Pionex closely enough to stand in for it. "
                   "No research budget used.")
             return 0
-        data_source = {"venue": VENUE, "tracking_vs_pionex": tracking}
+        data_source.update(venue=VENUE, tracking_vs_pionex=tracking)
     now = SystemClock().now_ms()
     spreads = [mv.median_spread_bps(s, now - 7 * 86_400_000) for s in universe]
     spreads = [x for x in spreads if x is not None]

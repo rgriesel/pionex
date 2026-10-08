@@ -118,11 +118,57 @@ class DeepPullback(unittest.TestCase):
         self.assertEqual(signals(cls(p), universe_1h(crash)), [])         # no 4h uptrend, no trade
 
 
+class FundingExtreme(unittest.TestCase):
+    def series(self, n_hours=24 * 120, low_at=None):
+        """Hourly bars plus funding settled every 8h: alternating mild rates, one deep negative."""
+        b = make_bars("BTC_USDT", "60M", random_walk(n_hours, 100.0, 0.003, seed=12))
+        f = []
+        for k in range(n_hours // 8):
+            t = T0 + k * 8 * HOUR + 1                                     # 1 ms after the hour, as Binance does
+            f.append((t, -0.0009 if t == low_at else 0.0001 * (1 + (k % 7))))
+        return b, f
+
+    def test_fresh_low_settlement_only_and_point_in_time(self):
+        cls = catalog.ALL["funding_extreme_1h"]
+        p = {"q": 0.05, "hold": 2, "stop_atr": 1.5}
+        low_at = T0 + 300 * 8 * HOUR + 1                                  # after the 270-settlement warm-up
+        b, f = self.series(low_at=low_at)
+        self.assertEqual(signals(cls(p), {"BTC_USDT": (b, resample(b, "4H"))}), [])   # no funding attached
+        b.funding = f
+        sig = signals(cls(p), {"BTC_USDT": (b, resample(b, "4H"))})
+        self.assertEqual(len(sig), 1)
+        self.assertGreaterEqual(sig[0].decided_at, low_at)              # never before the settlement is known
+        self.assertEqual(sig[0].bar_time, low_at - 1)                    # the first bar closing after it
+        self.assertIsNone(sig[0].target)
+        self.assertEqual(sig[0].max_hold_bars, 2)
+
+    def test_fetch_pages_and_stores_settlements(self):
+        import sqlite3
+        from pionex_lab.data import proxy
+        conn = sqlite3.connect(":memory:")
+        now = T0 + 3000 * 8 * HOUR
+        calls = []
+
+        def get_json(url):
+            calls.append(url)
+            start = int(url.split("startTime=")[1].split("&")[0])
+            first = max(start, T0)
+            k0 = -(-(first - T0) // (8 * HOUR))
+            return [{"fundingTime": T0 + (k0 + k) * 8 * HOUR, "fundingRate": "0.0001"}
+                    for k in range(1000) if T0 + (k0 + k) * 8 * HOUR <= now]
+        out = proxy.fetch_funding(conn, "BTC_USDT", now, days=1100, get_json=get_json)
+        self.assertEqual(out["funding_rows"], 3001)
+        self.assertGreaterEqual(len(calls), 4)                           # paged 1000 at a time
+        again = proxy.fetch_funding(conn, "BTC_USDT", now, get_json=get_json)
+        self.assertEqual(again["funding_rows_added"], 0)                 # resumes after the last settlement
+        self.assertEqual(len(proxy.funding_series(conn, "BTC_USDT")), 3001)
+
+
 class Mandate(unittest.TestCase):
     def test_new_hypotheses_respect_search_budget_and_holding_cap(self):
         from helpers import mandate
         q = mandate().qualification
-        for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "session_drift_1h",
+        for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_extreme_1h", "session_drift_1h",
                      "deep_pullback_1h"):
             cls = catalog.ALL[name]
             self.assertLessEqual(len(cls.grid), int(q["max_parameter_trials_per_hypothesis"]))

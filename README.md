@@ -115,6 +115,10 @@ What happens on first start:
    `pionex_lab/strategies/catalog.py` with their date, rationale and bounded grid before any test:
    2026-10-06 added capitulation reversal, a Bollinger snapback scalp and a US-open breakout scalp
    (5-minute, holds <= 60 min for the scalps), plus hourly session drift and deep pullback.
+   2026-10-08 added `funding_extreme_1h`, the first hypothesis on information other than OHLCV:
+   `fetch-proxy` also stores Binance USD-M perpetual funding rates (public, labelled proxy venue)
+   and hourly research attaches them to the bars. The live engine has no funding feed yet, so
+   the hypothesis cannot signal there until one is added (only worth doing if it qualifies).
 
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,

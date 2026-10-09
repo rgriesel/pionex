@@ -192,12 +192,61 @@ def universe_with(b5, funding):
     return {b5.symbol: (b5, b60)}
 
 
+def path(waypoints, step=0.5, flat=280, start=103.0):
+    """Hourly closes: `flat` bars at `start`, then straight legs through the waypoints."""
+    out, last = [start] * flat, start
+    for w in waypoints:
+        n = max(1, round(abs(w - last) / step))
+        out += [last + (w - last) * k / n for k in range(1, n + 1)]
+        last = w
+    return out + [last] * 10
+
+
+class ElliottAbc(unittest.TestCase):
+    # Sized like real BTC hourly swings (stops must stay within the 3% stop-distance cap).
+    #          P0   P1   P2   P3   P4   P5   A      B      C      breakout
+    TEXTBOOK = [100, 102, 101, 104, 103, 106, 104.6, 105.4, 103.6, 106]
+
+    def sigs(self, waypoints, **p):
+        params = {"k": 2.0, "rr": 1.5, "div": 0, **p}
+        closes = path(waypoints, step=0.15, start=101.0)
+        b = make_bars("BTC_USDT", "60M", closes, spread=0.0005)
+        return closes, signals(catalog.ALL["elliott_abc_continuation_1h"](params), {"BTC_USDT": (b, resample(b, "4H"))})
+
+    def test_buys_the_first_close_above_the_b_high(self):
+        closes, sig = self.sigs(self.TEXTBOOK)
+        self.assertEqual(len(sig), 1)
+        i = (sig[0].bar_time - T0) // HOUR
+        self.assertGreater(closes[i], 105.4)
+        self.assertLessEqual(closes[i - 1], 105.4)
+        self.assertLess(sig[0].stop, 103.6)                                # under the C low
+        self.assertAlmostEqual(sig[0].features["retrace"], 0.4, delta=0.02)
+
+    def test_rules_reject_overlap_and_too_deep_or_shallow_corrections(self):
+        overlap = list(self.TEXTBOOK)
+        overlap[4] = 101.5                                                  # wave 4 below the wave 1 high
+        self.assertEqual(self.sigs(overlap)[1], [])
+        shallow = list(self.TEXTBOOK)
+        shallow[8] = 105.0                                                  # C retraces only ~17%
+        self.assertEqual(self.sigs(shallow)[1], [])
+        deep = list(self.TEXTBOOK)
+        deep[8] = 100.5                                                     # C retraces ~92%
+        self.assertEqual(self.sigs(deep)[1], [])
+
+    def test_zigzag_pivots_are_point_in_time(self):
+        closes = path(self.TEXTBOOK, step=0.15, start=101.0)
+        b = make_bars("BTC_USDT", "60M", closes, spread=0.0005)
+        from pionex_lab.strategies.indicators import atr
+        for bar, price, kind, confirmed in catalog._zigzag(b.h, b.l, atr(b.h, b.l, b.c, 14), 2.0):
+            self.assertGreater(confirmed, bar)                              # known only after the reversal
+
+
 class Mandate(unittest.TestCase):
     def test_new_hypotheses_respect_search_budget_and_holding_cap(self):
         from helpers import mandate
         q = mandate().qualification
         for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_settlement_bounce",
-                     "funding_extreme_1h", "session_drift_1h",
+                     "funding_extreme_1h", "elliott_abc_continuation_1h", "session_drift_1h",
                      "deep_pullback_1h"):
             cls = catalog.ALL[name]
             self.assertLessEqual(len(cls.grid), int(q["max_parameter_trials_per_hypothesis"]))

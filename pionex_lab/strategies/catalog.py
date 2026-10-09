@@ -421,6 +421,89 @@ class UsOpenBreakoutScalp(Strategy):
                             {"range_frac": (hi - lo) / lo, "vol_ratio": b.v[i] / d["vol_sma"][i - 1]})
 
 
+def _zigzag(h, l, a, k):
+    """Point-in-time swing pivots [(bar, price, kind, confirmed_bar)]: a swing high/low is
+    confirmed only once price has reversed from it by k x ATR (ATR at the extreme's bar), so a
+    pivot is never known before `confirmed_bar`. Pivots alternate H/L."""
+    piv, direction, ext = [], 0, None
+    for i in range(len(h)):
+        if not finite(a[i]):
+            continue
+        if direction == 0:
+            direction, ext = 1, i
+        elif direction == 1:
+            if h[i] >= h[ext]:
+                ext = i
+            elif h[ext] - l[i] >= k * a[ext]:
+                piv.append((ext, h[ext], "H", i))
+                direction, ext = -1, i
+        else:
+            if l[i] <= l[ext]:
+                ext = i
+            elif h[i] - l[ext] >= k * a[ext]:
+                piv.append((ext, l[ext], "L", i))
+                direction, ext = 1, i
+    return piv
+
+
+class ElliottAbcContinuation1h(Strategy):
+    """Pre-registered 2026-10-09, before any test on any data. Objective, point-in-time Elliott
+    wave rules (counts drawn on finished charts use hindsight). Swings come from a k x ATR zigzag
+    whose pivots are known only once confirmed. Pattern: a 5-wave advance P0-P5 obeying the three
+    rules (wave 2 holds above P0, wave 4 does not overlap wave 1, wave 3 is not the shortest), then
+    A (P5->P6) and B (P6->P7, below P5); the C low after P7 retraces 38.2-78.6% of the impulse and
+    holds above P0. Buy the first close above the B high within 48 bars (correction over, next
+    impulse starting). Optional indicator filter: bullish RSI(14) divergence (C lower than A, RSI
+    higher). Stop 0.25 ATR under the C low, target rr x risk, mandate time exit 4h."""
+    name = "elliott_abc_continuation_1h"
+    base_interval, context_interval = "60M", "4H"
+    max_hold_bars = 4
+    grid = _grid(k=[2.0, 3.0], rr=[1.5, 2.5], div=[0, 1])
+
+    def _prepare_symbol(self, d):
+        b = d["b5"]
+        d["rsi"] = rsi(b.c, 14)
+        for k in (2.0, 3.0):
+            piv = _zigzag(b.h, b.l, d["atr"], k)
+            count, n = [0] * len(b), 0
+            for i in range(len(b)):
+                while n < len(piv) and piv[n][3] <= i:
+                    n += 1
+                count[i] = n
+            d[f"piv{k}"], d[f"pc{k}"] = piv, count
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, a = d["b5"], d["atr"][i]
+        piv, n = d[f"piv{p['k']}"], d[f"pc{p['k']}"][i]
+        if n and piv[n - 1][2] == "L":
+            n -= 1                                          # a confirmed C low after P7 is fine
+        if n < 8 or not finite(a) or a <= 0:
+            return None
+        P = piv[n - 8:n]
+        if [x[2] for x in P] != ["L", "H"] * 4:
+            return None
+        p0, p1, p2, p3, p4, p5, p6, p7 = (x[1] for x in P)
+        w1, w3, w5 = p1 - p0, p3 - p2, p5 - p4
+        if not (p2 > p0 and p3 > p1 and p4 > p1 and p5 > p3 and w3 > min(w1, w5) and p6 < p5 and p6 < p7 < p5):
+            return None
+        b7 = P[7][0]
+        if not 0 < i - b7 <= 48 or b.c[i] <= p7 or any(c > p7 for c in b.c[b7 + 1:i]):
+            return None                                     # first close above the B high
+        c_bar = min(range(b7 + 1, i + 1), key=lambda j: b.l[j])
+        lo = b.l[c_bar]
+        if lo <= p0 or not 0.382 <= (p5 - lo) / (p5 - p0) <= 0.786:
+            return None
+        if p["div"]:
+            r_c, r_a = d["rsi"][c_bar], d["rsi"][P[6][0]]
+            if not (lo < p6 and finite(r_c, r_a) and r_c > r_a):
+                return None
+        stop = lo - 0.25 * a
+        return self._signal(d, symbol, i, stop, b.c[i] + p["rr"] * (b.c[i] - stop),
+                            "close above the B high after a 5-wave advance and ABC correction",
+                            {"retrace": (p5 - lo) / (p5 - p0), "w1": w1, "w3": w3, "w5": w5})
+
+
 class FundingExtreme1h(Strategy):
     """Pre-registered 2026-10-08, before any test on any data. First hypothesis on information
     other than OHLCV: every price-pattern hypothesis so far had ~0 gross expectancy. When the
@@ -526,7 +609,7 @@ def _hourly(cls):
         "__doc__": (cls.__doc__ or "") + " [1h base / 4h context variant]"})
 
 
-HOURLY = {c.name: c for c in (FundingExtreme1h, SessionDrift1h, DeepPullback1h,
+HOURLY = {c.name: c for c in (FundingExtreme1h, ElliottAbcContinuation1h, SessionDrift1h, DeepPullback1h,
                               _hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
                               _hourly(RelativeStrength))}
 ALL = {**STRATEGIES, **HOURLY}

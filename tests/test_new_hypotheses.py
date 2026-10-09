@@ -164,11 +164,40 @@ class FundingExtreme(unittest.TestCase):
         self.assertEqual(len(proxy.funding_series(conn, "BTC_USDT")), 3001)
 
 
+class FundingSettlementBounce(unittest.TestCase):
+    def test_after_a_known_crowded_long_settlement_only(self):
+        cls = catalog.ALL["funding_settlement_bounce"]
+        p = {"q": 0.9, "offset": 1, "hold": 6}
+        days = 100
+        b = make_bars("BTC_USDT", "5M", random_walk(days * 288, 100.0, 0.001, seed=4))
+        hot = T0 + 290 * 8 * HOUR                                         # a settlement after the warm-up
+        f = [(T0 + k * 8 * HOUR + 3, 0.0009 if T0 + k * 8 * HOUR == hot else 0.0001)          # baseline ties: mid-rank 0.5
+             for k in range(days * 3)]
+        self.assertEqual(signals(cls(p), universe_with(b, None)), [])     # no funding attached
+        sig = signals(cls(p), universe_with(b, f))
+        self.assertEqual(len(sig), 1)
+        self.assertEqual(sig[0].decided_at, hot + 5 * 60_000)             # one 5m bar after the settlement hour
+        self.assertGreaterEqual(sig[0].decided_at, hot + 3)               # never before it is known
+        self.assertIsNone(sig[0].target)
+        neg = [(t, -r if t == hot + 3 else r) for t, r in f]               # the same tail, but longs not paying
+        self.assertEqual(signals(cls(p), universe_with(b, neg)), [])
+
+
+def universe_with(b5, funding):
+    b60 = make_bars(b5.symbol, "60M", b5.c[11::12], start=b5.t[0])
+    if funding is not None:
+        b5.funding = funding
+    elif hasattr(b5, "funding"):
+        del b5.funding
+    return {b5.symbol: (b5, b60)}
+
+
 class Mandate(unittest.TestCase):
     def test_new_hypotheses_respect_search_budget_and_holding_cap(self):
         from helpers import mandate
         q = mandate().qualification
-        for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_extreme_1h", "session_drift_1h",
+        for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_settlement_bounce",
+                     "funding_extreme_1h", "session_drift_1h",
                      "deep_pullback_1h"):
             cls = catalog.ALL[name]
             self.assertLessEqual(len(cls.grid), int(q["max_parameter_trials_per_hypothesis"]))

@@ -121,6 +121,9 @@ What happens on first start:
    the hypothesis cannot signal there until one is added (only worth doing if it qualifies).
    2026-10-09 added `funding_settlement_bounce` (5-minute, holds <= 60 min): buy 5-15 minutes after
    an 8-hourly funding settlement whose rate was positive and in its top tail (crowded longs).
+   2026-10-09 also added `elliott_abc_continuation_1h`: objective, point-in-time Elliott wave rules
+   (k x ATR zigzag pivots known only once confirmed; 5-wave impulse obeying the three rules, ABC
+   correction retracing 38.2-78.6%, buy the first close above the B high; optional RSI divergence).
 
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,

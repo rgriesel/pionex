@@ -332,6 +332,47 @@ class BandSnapbackScalp(Strategy):
                             {"z": (b.c[i] - mid) / sd, "range_atr": (b.h[i] - b.l[i]) / a}, hold=p["hold"])
 
 
+def _funding_ranks(f: list, n: int) -> list:
+    """For each settlement j with n settlements of history: (time, mid-rank of its rate within the
+    trailing n, rate). Mid-rank counts ties half, so the common 0.01% baseline is not an extreme."""
+    out = []
+    for j in range(n - 1, len(f)):
+        window, r0 = [r for _, r in f[j - n + 1:j + 1]], f[j][1]
+        out.append((f[j][0], (sum(1 for r in window if r < r0) + 0.5 * sum(1 for r in window if r == r0)) / n, r0))
+    return out
+
+
+class FundingSettlementBounce(Strategy):
+    """Pre-registered 2026-10-09, before any test on any data. Non-OHLCV scalp around perpetual
+    funding settlements (every 8h): when the settling rate is positive and in the top tail (mid-rank
+    >= q) of its trailing 270 settlements, crowded longs close before settlement to avoid paying,
+    pressing price; after settlement buyers return. Buy `offset` 5m bars after the settlement hour
+    (only once the settlement is known), hold `hold` bars, stop 1.5 ATR, no target. Funding comes
+    from the labelled proxy venue; bars without a `funding` attribute never signal."""
+    name = "funding_settlement_bounce"
+    grid = _grid(q=[0.80, 0.90], offset=[1, 3], hold=[6, 12])
+    max_hold_bars = 12
+    lookback = 270
+
+    def _prepare_symbol(self, d):
+        f = getattr(d["b5"], "funding", None) or []
+        d["f_info"] = {t // HOUR_MS * HOUR_MS: (t, rank, rate) for t, rank, rate in _funding_ranks(f, self.lookback)}
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, a = d["b5"], d["atr"][i]
+        close = b.t[i] + FIVE_MIN_MS
+        hour = close - p["offset"] * FIVE_MIN_MS
+        x = d["f_info"].get(hour) if hour % HOUR_MS == 0 else None
+        if x is None or not finite(a) or a <= 0:
+            return None
+        t_settle, rank, rate = x
+        if t_settle > close or rate <= 0 or rank < p["q"]:     # known by now; longs crowded and paying
+            return None
+        return self._signal(d, symbol, i, b.c[i] - 1.5 * a, None, "post-settlement bounce after crowded-long funding",
+                            {"funding_rank": rank, "funding_rate": rate}, hold=p["hold"])
+
+
 def _us_open_utc_ms(t_ms: int) -> int:
     """09:30 New York time on t_ms's UTC date, in UTC ms (US DST: second Sunday of March to the
     first Sunday of November)."""
@@ -472,7 +513,8 @@ class DeepPullback1h(Strategy):
 
 
 STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength,
-                                        CapitulationReversal, BandSnapbackScalp, UsOpenBreakoutScalp)}
+                                        CapitulationReversal, BandSnapbackScalp, UsOpenBreakoutScalp,
+                                        FundingSettlementBounce)}
 
 
 def _hourly(cls):

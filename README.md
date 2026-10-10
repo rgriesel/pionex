@@ -145,6 +145,57 @@ python3 -m unittest discover -s tests -v                                        
 python3 -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v   # 12 skill tests
 ```
 
+## Wave Lab (local Elliott Wave charting)
+
+A local, read-only charting app modelled on Elliott Wave platforms such as WaveBasis. It runs on
+your computer with the standard library only, and reads public Pionex market data. It needs no API
+key and has no order path.
+
+```bash
+python3 -m pionex_lab waves --open          # http://127.0.0.1:8770/
+python3 -m pionex_lab waves --feed demo     # offline: labelled SYNTHETIC prices, not market data
+```
+
+`--feed auto` (the default) uses Pionex public klines if `api.pionex.com` is reachable. Otherwise it
+uses bars already collected in `var/market.db`, and then labelled demo data. The active source is
+shown in the header badge, and demo data is shown in red.
+
+Features:
+
+- **Charts.** Canvas engine with pan, zoom, price-axis drag/zoom (double-click to reset), log scale,
+  crosshair with OHLC legend, and PNG export. Nine timeframes (1m to 1D). Eight styles: candles,
+  hollow, Heikin Ashi, OHLC, line, area, step and baseline. Light and dark themes.
+- **Layouts.** 1, 2 side-by-side, 2 stacked, or a 2x2 grid. Each pane has its own timeframe, the
+  symbol can be linked across panes, and the crosshair is synchronised.
+- **Automatic wave counts.** Zigzag swings at Minor, Intermediate or Primary degree (or a manual
+  swing %) are tested as 5-wave impulses and A-B-C zigzags or flats. Hard Elliott rules filter the
+  candidates and guideline ratios score them. You get a primary count plus alternates, earlier
+  completed patterns, the wave in progress, an invalidation level, and Fibonacci targets.
+- **Smart tools.** Smart Fibs appear when you hover a wave label. There are also Elliott channels
+  (0-2 and 2-4), support/resistance from pivot clusters, and swing pivots.
+- **Indicators.** About 20 indicators plus volume: SMA, EMA, WMA, Bollinger, Keltner, Donchian,
+  Ichimoku, Parabolic SAR, Supertrend, VWAP, RSI, MACD, the Elliott Wave Oscillator, Stochastic,
+  Stochastic RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R and ROC. All parameters are editable.
+- **Drawing tools.** Trend line, ray, horizontal and vertical lines, rectangle, Fibonacci
+  retracement, trend-based Fibonacci extension, manual wave labels (1-5, A-B-C, W-X-Y), text, a
+  measure tool and an eraser. A magnet option snaps to OHLC. Drawings can be selected, dragged or
+  deleted, and are saved per symbol.
+- **Watchlists.** Multiple lists with last price, 24h change and a sparkline. Each row also shows
+  the wave in progress on 1H.
+- **Wave scanner.** Scans a watchlist, a custom list or the top symbols across timeframes. Filters
+  include in wave 3, in wave 5, a wave 2/4 pullback, wave B, wave C, a completed structure,
+  direction and minimum score.
+- **Alerts.** Price above/below, wave target reached, count invalidated, and wave-in-progress
+  changed. They can notify by popup, sound, spoken voice or desktop notification, and have a log.
+  Alerts are checked while the page is open.
+
+Watchlists, drawings, alerts and settings are kept in the browser's local storage. The server binds
+to 127.0.0.1 only, rejects foreign `Host` headers, and accepts no writes.
+
+Wave counts are pattern hypotheses with known subjectivity. A score measures how closely the swing
+ratios match textbook guidelines. It is not a probability, a forecast, a trade signal or evidence
+of profitability.
+
 ## Paper trading with the Pionex dry-run feature
 
 Pionex's official AI Kit CLI (`@pionex/pionex-ai-kit`, pinned to 0.2.55 in `tools/pionex-cli`) has

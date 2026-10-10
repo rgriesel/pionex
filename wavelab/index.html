@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wave Lab</title>
+<style>
+:root{--bg:#0e1117;--panel:#151a23;--panel2:#1b2230;--border:#283142;--text:#d8deea;--muted:#8792a6;--accent:#4c8dff;
+--up:#26a69a;--down:#ef5350;--grid:#1a212d;--cross:#8f9ab0;--warn:#ffb74d;--bad:#ef5350;--good:#26a69a;
+--deg-minor:#4fc3f7;--deg-intermediate:#ffb74d;--deg-primary:#f06292;--alt:#9e9e9e;--fib:#b39ddb;--target:#66bb6a;--level:#78909c;--draw:#4c8dff;--alert:#ffa726}
+:root[data-theme=light]{--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f6;--border:#d6dce6;--text:#1b2332;--muted:#667085;--grid:#edf0f5;--cross:#6b7588;
+--deg-minor:#0288d1;--deg-intermediate:#ef6c00;--deg-primary:#c2185b;--alt:#8a8a8a;--fib:#7e57c2;--target:#2e7d32;--level:#607d8b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:4px 8px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+select,input{background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:4px 6px}
+input[type=checkbox]{padding:0}
+#app{display:grid;grid-template-rows:auto 1fr auto;height:100%}
+header{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:5px;align-items:center;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--border)}
+header button,header .badge,header select{white-space:nowrap;flex:none}
+header .logo{font-weight:700;white-space:nowrap;letter-spacing:.3px;margin-right:6px}
+header .logo span{color:var(--accent)}
+.grp{display:flex;gap:2px;align-items:center}
+.sep{width:1px;height:22px;background:var(--border);margin:0 4px}
+.badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;border:1px solid var(--border)}
+.badge.demo{background:#b71c1c;color:#fff;border-color:#b71c1c}
+.badge.live{background:var(--panel2)}
+.spacer{flex:1}
+#body{display:grid;grid-template-columns:42px 1fr 360px;min-height:0}
+#body.nosb{grid-template-columns:42px 1fr 0}
+#tools{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;gap:3px;padding:5px 4px;overflow:auto}
+#tools button{width:32px;height:30px;padding:0;font-size:14px;display:flex;align-items:center;justify-content:center}
+#tools .tsep{height:1px;background:var(--border);margin:3px 0}
+#grid{display:grid;gap:3px;background:var(--border);min-height:0;min-width:0}
+.pane{position:relative;background:var(--bg);min-height:0;min-width:0;outline:2px solid transparent}
+.pane.active{outline-color:var(--accent);outline-offset:-2px}
+.pane canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+.pane .ptitle{position:absolute;left:8px;top:6px;z-index:2;display:flex;gap:6px;align-items:center;pointer-events:none}
+.pane .ptitle b{font-size:14px}
+.pane .ptitle .pi{pointer-events:auto;font-size:11px;padding:1px 5px}
+.pane .legend{position:absolute;left:8px;top:28px;z-index:2;font-size:11px;color:var(--muted);pointer-events:none;white-space:pre}
+.pane .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}
+aside{background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--border)}
+.tabs button{flex:1;border:0;border-radius:0;background:transparent;padding:8px 2px;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:transparent}
+.tabbody{flex:1;overflow:auto;padding:8px}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:4px 3px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+th{font-size:11px;color:var(--muted);font-weight:600;cursor:pointer;position:sticky;top:0;background:var(--panel)}
+td.num,th.num{text-align:right}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--panel2)}
+.up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--muted)}
+.x{border:0;background:transparent;color:var(--muted);padding:0 4px}
+.x:hover{color:var(--bad)}
+h4{margin:12px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.card{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--panel2)}
+.ok::before{content:"\2713  ";color:var(--good);font-weight:700}
+.no::before{content:"\2717  ";color:var(--bad);font-weight:700}
+.bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:2px}
+.bar i{display:block;height:100%;background:var(--accent)}
+footer{display:flex;gap:12px;padding:3px 10px;font-size:11px;color:var(--muted);background:var(--panel);border-top:1px solid var(--border)}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-start;justify-content:center;z-index:50;padding-top:8vh}
+.modal.show{display:flex}
+.dlg{background:var(--panel);border:1px solid var(--border);border-radius:8px;width:min(560px,94vw);max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px #0007}
+.dlg .hd{display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600}
+.dlg .bd{padding:10px 12px;overflow:auto}
+.dlg .hd .x{margin-left:auto;font-size:18px}
+.list div{padding:6px 8px;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between}
+.list div:hover,.list div.hl{background:var(--panel2)}
+#toasts{position:fixed;right:14px;bottom:34px;display:flex;flex-direction:column;gap:8px;z-index:60}
+.toast{background:var(--panel);border:1px solid var(--alert);border-left:4px solid var(--alert);border-radius:6px;padding:8px 12px;min-width:260px;box-shadow:0 6px 20px #0006}
+.toast b{display:block;margin-bottom:2px}
+#ctx{position:fixed;display:none;background:var(--panel);border:1px solid var(--border);border-radius:6px;z-index:70;min-width:200px;box-shadow:0 6px 20px #0006}
+#ctx div{padding:7px 12px;cursor:pointer}
+#ctx div:hover{background:var(--panel2)}
+.menu{position:relative}
+.menu .drop{position:absolute;top:110%;left:0;display:none;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;z-index:40;min-width:240px;box-shadow:0 6px 20px #0006}
+.menu.open .drop{display:block}
+.drop label{display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer}
+.spark{vertical-align:middle}
+.small{font-size:11px}
+@media (max-width:900px){#body{grid-template-columns:42px 1fr 0}#body.sbm{grid-template-columns:42px 0 1fr}}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <div class="logo">Wave<span>Lab</span></div>
+  <button id="symBtn" title="Change symbol (or just start typing)">BTC_USDT &#9662;</button>
+  <div class="grp" id="ivBtns"></div>
+  <div class="sep"></div>
+  <select id="styleSel" title="Chart style">
+    <option value="candles">Candles</option><option value="hollow">Hollow candles</option>
+    <option value="ha">Heikin Ashi</option><option value="ohlc">OHLC bars</option><option value="line">Line</option>
+    <option value="area">Area</option><option value="step">Step line</option><option value="baseline">Baseline</option>
+  </select>
+  <button id="indBtn" title="Indicators">&#402;x Indicators</button>
+  <div class="menu" id="waveMenu"><button id="waveBtn" title="Automatic wave analysis">&#8767; Waves &#9662;</button>
+    <div class="drop">
+      <label><input type="checkbox" data-w="waves"> Automatic wave count</label>
+      <label><input type="checkbox" data-w="alternates"> Alternate counts</label>
+      <label><input type="checkbox" data-w="history"> Earlier completed patterns</label>
+      <label><input type="checkbox" data-w="targets"> Fibonacci targets &amp; invalidation</label>
+      <label><input type="checkbox" data-w="fibs"> Smart Fibs (hover a wave label)</label>
+      <label><input type="checkbox" data-w="channels"> Elliott channels</label>
+      <label><input type="checkbox" data-w="levels"> Smart support / resistance</label>
+      <label><input type="checkbox" data-w="pivots"> Swing pivots</label>
+      <div class="row" style="margin-top:6px">Degree
+        <select id="degSel"><option value="minor">Minor</option><option value="intermediate">Intermediate</option><option value="primary">Primary</option></select>
+      </div>
+      <div class="row">Swing % <input id="pctIn" type="number" step="0.1" min="0.1" max="50" placeholder="auto" style="width:80px"></div>
+      <div class="small muted">Counts are pattern hypotheses, not forecasts.</div>
+    </div>
+  </div>
+  <div class="sep"></div>
+  <div class="grp" id="layoutBtns" title="Chart layout">
+    <button data-l="1">&#9634;</button><button data-l="2">&#9707;</button><button data-l="2v">&#9636;</button><button data-l="4">&#8862;</button>
+  </div>
+  <button id="linkBtn" title="Link symbol across charts">&#128279;</button>
+  <button id="logBtn" title="Logarithmic price scale">Log</button>
+  <button id="magBtn" title="Magnet: snap drawings to OHLC">&#129522;</button>
+  <button id="shotBtn" title="Save chart as PNG">&#128247;</button>
+  <div class="spacer"></div>
+  <span id="feedBadge" class="badge live" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">&hellip;</span>
+    <button id="themeBtn" title="Light / dark">&#9681;</button>
+  <button id="sbBtn" title="Toggle side panel">&#9776;</button>
+</header>
+<div id="body">
+  <div id="tools"></div>
+  <div id="grid"></div>
+  <aside>
+    <div class="tabs" id="tabs">
+      <button data-t="watch" class="on">Watchlist</button><button data-t="scan">Scanner</button>
+      <button data-t="alerts">Alerts</button><button data-t="count">Count</button>
+    </div>
+    <div class="tabbody" id="tab-watch"></div>
+    <div class="tabbody" id="tab-scan" hidden></div>
+    <div class="tabbody" id="tab-alerts" hidden></div>
+    <div class="tabbody" id="tab-count" hidden></div>
+  </aside>
+</div>
+<footer><span id="status">Starting&hellip;</span><span class="spacer"></span>
+  <span>Read-only analysis. Wave counts are pattern hypotheses, not forecasts, signals, or evidence of profitability. Wave Lab cannot place orders.</span></footer>
+</div>
+
+<div class="modal" id="symModal"><div class="dlg"><div class="hd">Symbol search<button class="x" data-close>&times;</button></div>
+  <div class="bd"><input id="symQ" placeholder="Type to search, e.g. ETH" style="width:100%;margin-bottom:8px" autocomplete="off">
+  <div class="list" id="symList"></div></div></div></div>
+<div class="modal" id="indModal"><div class="dlg"><div class="hd">Indicators<button class="x" data-close>&times;</button></div>
+  <div class="bd"><h4 style="margin-top:0">Active on this chart</h4><div id="indActive"></div>
+  <h4>Add</h4><input id="indQ" placeholder="Filter" style="width:100%;margin-bottom:6px"><div class="list" id="indList"></div></div></div></div>
+<div class="modal" id="alertModal"><div class="dlg"><div class="hd">Create alert<button class="x" data-close>&times;</button></div>
+  <div class="bd" id="alertForm"></div></div></div>
+<div id="ctx"></div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+/* ============================================================ utilities */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const NaNs = n => new Array(n).fill(NaN);
+const fin = v => typeof v === "number" && isFinite(v);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("wavelab." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("wavelab." + k, JSON.stringify(v)); } catch (e) {} }
+};
+function decimals(p) { if (!fin(p) || p <= 0) return 2; return Math.max(2, Math.min(8, 4 - Math.floor(Math.log10(p)))); }
+const fmtP = (p, ref) => fin(p) ? p.toFixed(decimals(ref ?? p)) : "–";
+const fmtPct = v => fin(v) ? (v >= 0 ? "+" : "") + v.toFixed(2) + "%" : "–";
+const fmtVol = v => !fin(v) ? "–" : v >= 1e9 ? (v/1e9).toFixed(2)+"B" : v >= 1e6 ? (v/1e6).toFixed(2)+"M" : v >= 1e3 ? (v/1e3).toFixed(1)+"K" : v.toFixed(2);
+const IV_MS = {"1M":6e4,"5M":3e5,"15M":9e5,"30M":18e5,"60M":36e5,"4H":144e5,"8H":288e5,"12H":432e5,"1D":864e5};
+const IV_LABEL = {"1M":"1m","5M":"5m","15M":"15m","30M":"30m","60M":"1H","4H":"4H","8H":"8H","12H":"12H","1D":"D"};
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const pad2 = n => String(n).padStart(2, "0");
+function fmtTime(t, iv, full) {
+  const d = new Date(t);
+  const day = `${MON[d.getMonth()]} ${d.getDate()}`;
+  if (full) return `${d.getFullYear()} ${day} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return IV_MS[iv] >= 864e5 ? day : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+async function api(path) {
+  const r = await fetch(path, {cache: "no-store"});
+  const j = await r.json().catch(() => ({error: "bad response"}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function setStatus(s) { $("#status").textContent = s; }
+
+/* ============================================================ indicator math */
+const TA = {
+  sma(x, n) { const o = NaNs(x.length); let s = 0, k = 0; for (let i = 0; i < x.length; i++) { s += x[i]; k++; if (i >= n) s -= x[i-n]; if (i >= n-1) o[i] = s / n; } return o; },
+  ema(x, n) { const o = NaNs(x.length), a = 2/(n+1); let p = NaN, s = 0, c = 0;
+    for (let i = 0; i < x.length; i++) { const v = x[i]; if (!fin(v)) continue; if (!fin(p)) { s += v; c++; if (c === n) { p = s/n; o[i] = p; } } else { p = v*a + p*(1-a); o[i] = p; } } return o; },
+  rma(x, n) { const o = NaNs(x.length); let p = NaN, s = 0, c = 0;
+    for (let i = 0; i < x.length; i++) { const v = x[i]; if (!fin(v)) continue; if (!fin(p)) { s += v; c++; if (c === n) { p = s/n; o[i] = p; } } else { p = (p*(n-1)+v)/n; o[i] = p; } } return o; },
+  wma(x, n) { const o = NaNs(x.length), d = n*(n+1)/2; for (let i = n-1; i < x.length; i++) { let s = 0; for (let j = 0; j < n; j++) s += x[i-j]*(n-j); o[i] = s/d; } return o; },
+  std(x, n) { const o = NaNs(x.length); for (let i = n-1; i < x.length; i++) { let m = 0; for (let j = 0; j < n; j++) m += x[i-j]; m /= n; let v = 0; for (let j = 0; j < n; j++) v += (x[i-j]-m)**2; o[i] = Math.sqrt(v/n); } return o; },
+  hh(x, n) { const o = NaNs(x.length); for (let i = n-1; i < x.length; i++) { let m = -Infinity; for (let j = 0; j < n; j++) m = Math.max(m, x[i-j]); o[i] = m; } return o; },
+  ll(x, n) { const o = NaNs(x.length); for (let i = n-1; i < x.length; i++) { let m = Infinity; for (let j = 0; j < n; j++) m = Math.min(m, x[i-j]); o[i] = m; } return o; },
+  tr(d) { return d.c.map((_, i) => i === 0 ? d.h[0]-d.l[0] : Math.max(d.h[i]-d.l[i], Math.abs(d.h[i]-d.c[i-1]), Math.abs(d.l[i]-d.c[i-1]))); },
+  atr(d, n) { return TA.rma(TA.tr(d), n); },
+  rsi(x, n) { const g = [0], l = [0]; for (let i = 1; i < x.length; i++) { const ch = x[i]-x[i-1]; g.push(Math.max(ch, 0)); l.push(Math.max(-ch, 0)); }
+    const ag = TA.rma(g.slice(1), n), al = TA.rma(l.slice(1), n); return [NaN, ...ag.map((v, i) => al[i] === 0 ? 100 : 100 - 100/(1+v/al[i]))]; },
+  sub(a, b) { return a.map((v, i) => v - b[i]); },
+};
+const L = (v, color, width = 1.3, dash) => ({v, color, width, dash});
+const INDICATORS = {
+  sma: {name: "Simple moving average", overlay: true, params: {length: 20}, calc: (d, p) => ({lines: [L(TA.sma(d.c, p.length), "#ffca28")]})},
+  ema: {name: "Exponential moving average", overlay: true, params: {length: 50}, calc: (d, p) => ({lines: [L(TA.ema(d.c, p.length), "#29b6f6")]})},
+  wma: {name: "Weighted moving average", overlay: true, params: {length: 20}, calc: (d, p) => ({lines: [L(TA.wma(d.c, p.length), "#ab47bc")]})},
+  bb: {name: "Bollinger Bands", overlay: true, params: {length: 20, mult: 2}, calc: (d, p) => {
+    const m = TA.sma(d.c, p.length), s = TA.std(d.c, p.length), u = m.map((v, i) => v + p.mult*s[i]), lo = m.map((v, i) => v - p.mult*s[i]);
+    return {lines: [L(m, "#ff7043", 1), L(u, "#42a5f5", 1), L(lo, "#42a5f5", 1)], fill: [u, lo, "rgba(66,165,245,.07)"]}; }},
+  kc: {name: "Keltner Channels", overlay: true, params: {length: 20, mult: 2}, calc: (d, p) => {
+    const m = TA.ema(d.c, p.length), a = TA.atr(d, 10);
+    return {lines: [L(m, "#26c6da", 1), L(m.map((v, i) => v + p.mult*a[i]), "#26c6da", 1, [4, 3]), L(m.map((v, i) => v - p.mult*a[i]), "#26c6da", 1, [4, 3])]}; }},
+  donchian: {name: "Donchian Channels", overlay: true, params: {length: 20}, calc: (d, p) => {
+    const u = TA.hh(d.h, p.length), lo = TA.ll(d.l, p.length);
+    return {lines: [L(u, "#5c6bc0", 1), L(lo, "#5c6bc0", 1), L(u.map((v, i) => (v+lo[i])/2), "#5c6bc0", 1, [3, 3])], fill: [u, lo, "rgba(92,107,192,.06)"]}; }},
+  ichimoku: {name: "Ichimoku Cloud", overlay: true, params: {conversion: 9, base: 26, spanB: 52}, calc: (d, p) => {
+    const mid = n => { const lo = TA.ll(d.l, n); return TA.hh(d.h, n).map((v, i) => (v + lo[i]) / 2); };
+    const conv = mid(p.conversion), base = mid(p.base), sb = mid(p.spanB), sh = p.base, n = d.c.length;
+    const a = NaNs(n + sh), b = NaNs(n + sh), lag = NaNs(n);
+    for (let i = 0; i < n; i++) { a[i+sh] = (conv[i]+base[i])/2; b[i+sh] = sb[i]; if (i >= sh) lag[i-sh] = d.c[i]; }
+    return {lines: [L(conv, "#29b6f6", 1), L(base, "#ef5350", 1), L(lag, "#66bb6a", 1), L(a, "#81c784", 1), L(b, "#e57373", 1)], fill: [a, b, "rgba(129,199,132,.10)"]}; }},
+  psar: {name: "Parabolic SAR", overlay: true, params: {step: 0.02, max: 0.2}, calc: (d, p) => {
+    const n = d.c.length, o = NaNs(n); if (n < 3) return {dots: o};
+    let up = d.c[1] >= d.c[0], af = p.step, ep = up ? d.h[0] : d.l[0], sar = up ? d.l[0] : d.h[0];
+    for (let i = 1; i < n; i++) {
+      sar = sar + af*(ep - sar);
+      if (up) { sar = Math.min(sar, d.l[i-1], i > 1 ? d.l[i-2] : d.l[i-1]); if (d.l[i] < sar) { up = false; sar = ep; ep = d.l[i]; af = p.step; } else if (d.h[i] > ep) { ep = d.h[i]; af = Math.min(p.max, af+p.step); } }
+      else { sar = Math.max(sar, d.h[i-1], i > 1 ? d.h[i-2] : d.h[i-1]); if (d.h[i] > sar) { up = true; sar = ep; ep = d.h[i]; af = p.step; } else if (d.l[i] < ep) { ep = d.l[i]; af = Math.min(p.max, af+p.step); } }
+      o[i] = sar;
+    } return {dots: o, dotColor: "#ffa726"}; }},
+  supertrend: {name: "Supertrend", overlay: true, params: {length: 10, mult: 3}, calc: (d, p) => {
+    const a = TA.atr(d, p.length), n = d.c.length, upL = NaNs(n), dnL = NaNs(n); let fu = NaN, fl = NaN, dir = 1;
+    for (let i = 0; i < n; i++) { if (!fin(a[i])) continue; const m = (d.h[i]+d.l[i])/2, bu = m + p.mult*a[i], bl = m - p.mult*a[i];
+      fu = !fin(fu) || bu < fu || d.c[i-1] > fu ? bu : fu; fl = !fin(fl) || bl > fl || d.c[i-1] < fl ? bl : fl;
+      if (dir === 1 && d.c[i] < fl) dir = -1; else if (dir === -1 && d.c[i] > fu) dir = 1;
+      if (dir === 1) upL[i] = fl; else dnL[i] = fu; }
+    return {lines: [L(upL, "#26a69a", 1.6), L(dnL, "#ef5350", 1.6)]}; }},
+  vwap: {name: "VWAP (anchored to first loaded bar)", overlay: true, params: {}, calc: d => {
+    let pv = 0, vv = 0; return {lines: [L(d.c.map((c, i) => { const tp = (d.h[i]+d.l[i]+c)/3; pv += tp*d.v[i]; vv += d.v[i]; return vv ? pv/vv : NaN; }), "#ec407a", 1.4)]}; }},
+  rsi: {name: "Relative Strength Index", params: {length: 14}, calc: (d, p) => ({lines: [L(TA.rsi(d.c, p.length), "#ab47bc")], levels: [30, 50, 70], range: [0, 100]})},
+  macd: {name: "MACD", params: {fast: 12, slow: 26, signal: 9}, calc: (d, p) => {
+    const m = TA.sub(TA.ema(d.c, p.fast), TA.ema(d.c, p.slow)), s = TA.ema(m, p.signal);
+    return {lines: [L(m, "#42a5f5"), L(s, "#ff7043")], hist: m.map((v, i) => v - s[i]), levels: [0]}; }},
+  ewo: {name: "Elliott Wave Oscillator", params: {fast: 5, slow: 35}, calc: (d, p) => {
+    const mp = d.h.map((h, i) => (h + d.l[i]) / 2); return {hist: TA.sub(TA.sma(mp, p.fast), TA.sma(mp, p.slow)), levels: [0]}; }},
+  stoch: {name: "Stochastic", params: {k: 14, smoothK: 3, d: 3}, calc: (d, p) => {
+    const hh = TA.hh(d.h, p.k), ll = TA.ll(d.l, p.k), raw = d.c.map((c, i) => hh[i] === ll[i] ? 50 : 100*(c-ll[i])/(hh[i]-ll[i]));
+    const k = TA.sma(raw.map(v => fin(v) ? v : 0), p.smoothK).map((v, i) => fin(raw[i]) ? v : NaN); return {lines: [L(k, "#42a5f5"), L(TA.sma(k.map(v => fin(v) ? v : 0), p.d).map((v, i) => fin(k[i]) ? v : NaN), "#ff7043")], levels: [20, 80], range: [0, 100]}; }},
+  stochrsi: {name: "Stochastic RSI", params: {rsi: 14, stoch: 14, k: 3, d: 3}, calc: (d, p) => {
+    const r = TA.rsi(d.c, p.rsi), rr = r.map(v => fin(v) ? v : 0), hh = TA.hh(rr, p.stoch), ll = TA.ll(rr, p.stoch);
+    const raw = r.map((v, i) => !fin(v) || i < p.rsi + p.stoch ? NaN : hh[i] === ll[i] ? 50 : 100*(v-ll[i])/(hh[i]-ll[i]));
+    const k = TA.sma(raw.map(v => fin(v) ? v : 0), p.k).map((v, i) => fin(raw[i]) ? v : NaN);
+    return {lines: [L(k, "#42a5f5"), L(TA.sma(k.map(v => fin(v) ? v : 0), p.d).map((v, i) => fin(k[i]) ? v : NaN), "#ff7043")], levels: [20, 80], range: [0, 100]}; }},
+  cci: {name: "Commodity Channel Index", params: {length: 20}, calc: (d, p) => {
+    const tp = d.c.map((c, i) => (c+d.h[i]+d.l[i])/3), m = TA.sma(tp, p.length), o = NaNs(tp.length);
+    for (let i = p.length-1; i < tp.length; i++) { let md = 0; for (let j = 0; j < p.length; j++) md += Math.abs(tp[i-j]-m[i]); md /= p.length; o[i] = md ? (tp[i]-m[i])/(0.015*md) : 0; }
+    return {lines: [L(o, "#26c6da")], levels: [-100, 0, 100]}; }},
+  atr: {name: "Average True Range", params: {length: 14}, calc: (d, p) => ({lines: [L(TA.atr(d, p.length), "#ef5350")]})},
+  adx: {name: "ADX / DMI", params: {length: 14}, calc: (d, p) => {
+    const n = d.c.length, pdm = [0], mdm = [0]; for (let i = 1; i < n; i++) { const u = d.h[i]-d.h[i-1], dn = d.l[i-1]-d.l[i]; pdm.push(u > dn && u > 0 ? u : 0); mdm.push(dn > u && dn > 0 ? dn : 0); }
+    const tr = TA.rma(TA.tr(d), p.length), pd = TA.rma(pdm, p.length).map((v, i) => 100*v/tr[i]), md = TA.rma(mdm, p.length).map((v, i) => 100*v/tr[i]);
+    const dx = pd.map((v, i) => v + md[i] ? 100*Math.abs(v-md[i])/(v+md[i]) : 0);
+    return {lines: [L(TA.rma(dx, p.length), "#ffca28", 1.6), L(pd, "#26a69a", 1), L(md, "#ef5350", 1)], levels: [20, 40]}; }},
+  obv: {name: "On-Balance Volume", params: {}, calc: d => { let s = 0; return {lines: [L(d.c.map((c, i) => (s += i === 0 ? 0 : c > d.c[i-1] ? d.v[i] : c < d.c[i-1] ? -d.v[i] : 0)), "#7e57c2")]}; }},
+  mfi: {name: "Money Flow Index", params: {length: 14}, calc: (d, p) => {
+    const tp = d.c.map((c, i) => (c+d.h[i]+d.l[i])/3), o = NaNs(tp.length);
+    for (let i = p.length; i < tp.length; i++) { let pos = 0, neg = 0; for (let j = 0; j < p.length; j++) { const k = i-j, f = tp[k]*d.v[k]; if (tp[k] > tp[k-1]) pos += f; else if (tp[k] < tp[k-1]) neg += f; } o[i] = neg ? 100 - 100/(1+pos/neg) : 100; }
+    return {lines: [L(o, "#66bb6a")], levels: [20, 80], range: [0, 100]}; }},
+  willr: {name: "Williams %R", params: {length: 14}, calc: (d, p) => { const hh = TA.hh(d.h, p.length), ll = TA.ll(d.l, p.length);
+    return {lines: [L(d.c.map((c, i) => hh[i] === ll[i] ? -50 : -100*(hh[i]-c)/(hh[i]-ll[i])), "#ec407a")], levels: [-80, -20], range: [-100, 0]}; }},
+  roc: {name: "Rate of Change", params: {length: 12}, calc: (d, p) => ({lines: [L(d.c.map((c, i) => i >= p.length ? 100*(c/d.c[i-p.length]-1) : NaN), "#8d6e63")], levels: [0]})},
+  volume: {name: "Volume", overlay: true, special: "volume", params: {ma: 20}, calc: () => ({})},
+};
+
+/* ============================================================ state */
+const DEFAULT_WAVE = {waves: true, alternates: false, history: true, targets: true, fibs: true, channels: true, levels: false, pivots: false};
+const S = {
+  meta: null, symbols: [],
+  symbol: store.get("symbol", "BTC_USDT"),
+  layout: store.get("layout", "1"),
+  link: store.get("link", true),
+  style: store.get("style", "candles"),
+  log: store.get("log", false),
+  magnet: store.get("magnet", true),
+  wave: Object.assign({}, DEFAULT_WAVE, store.get("wave", {})),
+  degree: store.get("degree", "intermediate"),
+  pct: store.get("pct", null),
+  indicators: store.get("indicators", [{type: "volume", params: {ma: 20}}, {type: "ewo", params: {fast: 5, slow: 35}}]),
+  paneIv: store.get("paneIv", ["60M", "4H", "15M", "1D"]),
+  paneSym: store.get("paneSym", []),
+  drawings: store.get("drawings", {}),
+  lists: store.get("lists", {"Main": ["BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "LINK_USDT"]}),
+  list: store.get("list", "Main"),
+  alerts: store.get("alerts", []),
+  alertLog: store.get("alertLog", []),
+  tool: "cursor", active: 0, panes: [], quotes: {}, waveCol: {}, scan: store.get("scanCfg", {src: "list", ivs: ["60M", "4H"], filter: "any", dir: "any", min: 0}),
+  scanRows: [], scanSort: ["score", -1], tab: store.get("tab", "watch"),
+};
+if (!S.lists[S.list]) S.list = Object.keys(S.lists)[0];
+const saveDrawings = () => store.set("drawings", S.drawings);
+
+/* ============================================================ chart */
+const TOOLS = [
+  ["cursor", "↖", "Cursor / select / pan (Esc)", 0], ["crosshair", "+", "Crosshair only", 0], null,
+  ["trend", "╱", "Trend line", 2], ["ray", "↗", "Ray", 2], ["hline", "─", "Horizontal line", 1], ["vline", "│", "Vertical line", 1],
+  ["rect", "▭", "Rectangle", 2], null,
+  ["fib", "F", "Fibonacci retracement", 2], ["fibext", "Fx", "Trend-based Fibonacci extension (3 clicks)", 3], null,
+  ["impulse", "①", "Impulse wave labels 0-1-2-3-4-5 (6 clicks)", 6], ["abc", "Ⓐ", "Corrective wave labels 0-A-B-C (4 clicks)", 4],
+  ["wxy", "W", "Double three labels 0-W-X-Y (4 clicks)", 4], null,
+  ["text", "T", "Text note", 1], ["measure", "⇕", "Measure (price, %, bars)", 2], ["alertline", "⏰", "Price alert at click", 1], null,
+  ["erase", "⌫", "Eraser: click a drawing to delete it", 1], ["clear", "♲", "Delete all drawings on this symbol", 0],
+];
+const TOOL_PTS = Object.fromEntries(TOOLS.filter(Boolean).map(t => [t[0], t[3]]));
+const WAVE_SEQ = {impulse: ["0", "1", "2", "3", "4", "5"], abc: ["0", "A", "B", "C"], wxy: ["0", "W", "X", "Y"]};
+const FIB_R = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_E = [0.618, 1, 1.272, 1.618, 2, 2.618];
+const AXIS_W = 74, TIME_H = 22;
+
+class Chart {
+  constructor(idx, el) {
+    this.idx = idx; this.el = el; this.data = null; this.an = null; this.off = 8; this.barW = 6;
+    this.yAuto = true; this.yLo = 0; this.yHi = 1; this.mouse = null; this.drag = null; this.draft = null;
+    this.sel = null; this.hoverWave = null; this.altShown = null; this.err = null; this.loading = false;
+    this.canvas = document.createElement("canvas"); el.appendChild(this.canvas);
+    this.ctx = this.canvas.getContext("2d");
+    el.insertAdjacentHTML("beforeend", `<div class="ptitle"><b></b><span class="muted iv"></span><button class="pi" data-a="alert" title="Create alert">&#9200;</button></div><div class="legend"></div><div class="msg"></div>`);
+    this.bind();
+  }
+  get symbol() { return S.link ? S.symbol : (S.paneSym[this.idx] || S.symbol); }
+  set symbol(s) { if (S.link) S.symbol = s; else { S.paneSym[this.idx] = s; store.set("paneSym", S.paneSym); } }
+  get interval() { return S.paneIv[this.idx] || "60M"; }
+  set interval(v) { S.paneIv[this.idx] = v; store.set("paneIv", S.paneIv); }
+  get key() { return this.symbol; }
+  get drawings() { return S.drawings[this.key] || (S.drawings[this.key] = []); }
+
+  async load(reset) {
+    const sym = this.symbol, iv = this.interval;
+    if (reset) { this.data = null; this.an = null; this.altShown = null; this.yAuto = true; this.off = 8; this.draw(); }
+    this.loading = true;
+    try {
+      const q = new URLSearchParams({symbol: sym, interval: iv, degree: S.degree, limit: 1000, bars: 1});
+      if (S.pct) q.set("pct", S.pct / 100);
+      const r = await api("/api/analysis?" + q);
+      if (sym !== this.symbol || iv !== this.interval) return;
+      this.data = r.bars; this.an = r; this.err = null;
+      this.data.n = this.data.c.length; this.data.step = IV_MS[iv];
+      this.ha = null; this.indCache = null;
+      if (this.idx === S.active) renderCount();
+    } catch (e) { this.err = e.message; }
+    finally { this.loading = false; this.draw(); }
+  }
+
+  /* ---- coordinates */
+  dims() {
+    const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
+    const subs = S.indicators.filter(x => INDICATORS[x.type] && !INDICATORS[x.type].overlay);
+    const subH = subs.length ? Math.max(36, Math.min(110, (H - TIME_H) * 0.17, (H - TIME_H) * 0.5 / subs.length)) : 0;
+    const mainH = Math.max(80, H - TIME_H - subH * subs.length);
+    return {W, H, pw: W - AXIS_W, mainH, subH, subs};
+  }
+  get end() { return (this.data ? this.data.n - 1 : 0) + this.off; }
+  start(pw) { return this.end - pw / this.barW + 1; }
+  x(i) { return (i - this._start + 0.5) * this.barW; }
+  iAt(x) { return x / this.barW - 0.5 + this._start; }
+  y(p) { const D = this._dims, pad = 14; if (S.log) { const a = Math.log(this.yHi), b = Math.log(this.yLo); return pad + (a - Math.log(Math.max(p, 1e-12))) / (a - b) * (D.mainH - 2*pad); } return pad + (this.yHi - p) / (this.yHi - this.yLo) * (D.mainH - 2*pad); }
+  pAt(y) { const D = this._dims, pad = 14, f = (y - pad) / (D.mainH - 2*pad); if (S.log) { const a = Math.log(this.yHi), b = Math.log(this.yLo); return Math.exp(a - f*(a-b)); } return this.yHi - f*(this.yHi - this.yLo); }
+  idxOfT(t) {
+    const d = this.data, n = d.n; if (!n) return 0;
+    if (t >= d.t[n-1]) return n - 1 + (t - d.t[n-1]) / d.step;
+    if (t <= d.t[0]) return (t - d.t[0]) / d.step;
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (d.t[m] <= t) lo = m; else hi = m; }
+    return lo + (t - d.t[lo]) / Math.max(1, d.t[hi] - d.t[lo]);
+  }
+  tOfIdx(i) { const d = this.data, n = d.n; if (i >= n - 1) return d.t[n-1] + (i - (n-1)) * d.step; if (i <= 0) return d.t[0] + i * d.step; const k = Math.floor(i); return d.t[k] + (i - k) * (d.t[k+1] - d.t[k]); }
+  series() {
+    const d = this.data;
+    if (S.style !== "ha") return d;
+    if (!this.ha) { const o = [], h = [], l = [], c = [];
+      for (let i = 0; i < d.n; i++) { const cc = (d.o[i]+d.h[i]+d.l[i]+d.c[i])/4, oo = i ? (o[i-1]+c[i-1])/2 : (d.o[0]+d.c[0])/2;
+        o.push(oo); c.push(cc); h.push(Math.max(d.h[i], oo, cc)); l.push(Math.min(d.l[i], oo, cc)); }
+      this.ha = {o, h, l, c, v: d.v, t: d.t, n: d.n, step: d.step}; }
+    return this.ha;
+  }
+  indicators() {
+    const sig = JSON.stringify(S.indicators);
+    if (!this.indCache || this.indCache.sig !== sig) {
+      this.indCache = {sig, out: S.indicators.map(x => { const def = INDICATORS[x.type]; if (!def) return null;
+        try { return def.calc(this.data, Object.assign({}, def.params, x.params)); } catch (e) { return null; } })};
+    }
+    return this.indCache.out;
+  }
+
+  /* ---- drawing */
+  draw() {
+    if (this._raf) return;
+    this._raf = requestAnimationFrame(() => { this._raf = null; this.render(); });
+  }
+  render() {
+    const cv = this.canvas, dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W || !H) return;
+    if (cv.width !== Math.round(W*dpr) || cv.height !== Math.round(H*dpr)) { cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); }
+    const g = this.ctx; g.setTransform(dpr, 0, 0, dpr, 0, 0); this._labelHits = [];
+    const C = this.C = {bg: css("--bg"), text: css("--text"), muted: css("--muted"), grid: css("--grid"), border: css("--border"), up: css("--up"), down: css("--down"),
+      cross: css("--cross"), fib: css("--fib"), target: css("--target"), bad: css("--bad"), level: css("--level"), draw: css("--draw"), alert: css("--alert"), alt: css("--alt"),
+      deg: css("--deg-" + S.degree), accent: css("--accent"), panel: css("--panel")};
+    g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+    const title = this.el.querySelector(".ptitle b"); title.textContent = this.symbol;
+    this.el.querySelector(".ptitle .iv").textContent = IV_LABEL[this.interval] + " · " + S.degree;
+    const msg = this.el.querySelector(".msg");
+    if (!this.data || !this.data.n) { msg.textContent = this.err ? "Error: " + this.err : this.loading ? "Loading…" : "No data"; this.el.querySelector(".legend").textContent = ""; return; }
+    msg.textContent = this.err ? "Refresh failed: " + this.err : "";
+    const D = this._dims = this.dims(), d = this.series(), n = d.n;
+    this.barW = Math.max(1.5, Math.min(60, this.barW));
+    this.off = Math.max(-(n - 5), Math.min(D.pw / this.barW - 5, this.off));
+    this._start = this.start(D.pw);
+    const i0 = Math.max(0, Math.floor(this._start)), i1 = Math.min(n - 1, Math.ceil(this.end));
+    if (this.yAuto) {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = i0; i <= i1; i++) { lo = Math.min(lo, d.l[i]); hi = Math.max(hi, d.h[i]); }
+      if (!fin(lo)) { lo = d.l[n-1]; hi = d.h[n-1]; }
+      const padR = (hi - lo) * 0.06 || hi * 0.01; this.yLo = Math.max(lo - padR, S.log ? lo * 0.5 : -Infinity); this.yHi = hi + padR;
+    }
+    const inds = this.indicators();
+    // main clip
+    g.save(); g.beginPath(); g.rect(0, 0, D.pw, D.mainH); g.clip();
+    this.drawGrid(g, D);
+    const volIdx = S.indicators.findIndex(x => x.type === "volume");
+    if (volIdx >= 0) this.drawVolume(g, D, i0, i1, S.indicators[volIdx].params);
+    if (S.wave.levels && this.an) this.drawLevels(g, D);
+    S.indicators.forEach((x, k) => { const def = INDICATORS[x.type]; if (def && def.overlay && inds[k]) this.drawOverlay(g, inds[k], i0, i1 + 60); });
+    this.drawSeries(g, D, d, i0, i1);
+    if (this.an) this.drawWaves(g, D);
+    this.drawAlertLines(g, D);
+    this.drawDrawings(g, D);
+    this.drawLast(g, D, d);
+    this.drawCrossMain(g, D);
+    g.restore();
+    // sub panes
+    let top = D.mainH;
+    D.subs.forEach(x => { const k = S.indicators.indexOf(x); this.drawSub(g, D, top, inds[k], x, i0, i1); top += D.subH; });
+    this.drawAxes(g, D, d);
+    this.drawLegend(d, inds);
+    // watermark
+    g.save(); g.globalAlpha = 0.05; g.fillStyle = C.text; g.font = "700 48px system-ui"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(this.symbol.replace("_", "/"), D.pw / 2, D.mainH / 2); g.restore();
+  }
+  niceStep(range, target) { const raw = range / Math.max(1, target), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; }
+  priceTicks(D) { const st = this.niceStep(this.yHi - this.yLo, D.mainH / 55), out = []; for (let v = Math.ceil(this.yLo / st) * st; v <= this.yHi; v += st) out.push(v); return out; }
+  timeTicks(D) {
+    const d = this.data, minPx = 90, every = Math.max(1, Math.ceil(minPx / this.barW)), steps = [1,2,3,4,6,8,12,16,24,48,96,192,384,768];
+    const st = steps.find(s => s >= every) || every, out = [];
+    for (let i = Math.ceil(this._start / st) * st; i <= this.end; i += st) out.push(i);
+    return out;
+  }
+  drawGrid(g, D) {
+    g.strokeStyle = this.C.grid; g.lineWidth = 1; g.beginPath();
+    for (const v of this.priceTicks(D)) { const y = Math.round(this.y(v)) + 0.5; g.moveTo(0, y); g.lineTo(D.pw, y); }
+    for (const i of this.timeTicks(D)) { const x = Math.round(this.x(i)) + 0.5; g.moveTo(x, 0); g.lineTo(x, D.mainH); }
+    g.stroke();
+  }
+  drawVolume(g, D, i0, i1, p) {
+    const d = this.data; let mx = 0; for (let i = i0; i <= i1; i++) mx = Math.max(mx, d.v[i]);
+    if (!mx) return; const h = D.mainH * 0.18, base = D.mainH, w = Math.max(1, this.barW * 0.7);
+    for (let i = i0; i <= i1; i++) { g.fillStyle = (d.c[i] >= d.o[i] ? this.C.up : this.C.down) + "55"; const bh = d.v[i] / mx * h; g.fillRect(this.x(i) - w/2, base - bh, w, bh); }
+    if (p && p.ma) { const ma = TA.sma(d.v, p.ma); g.strokeStyle = this.C.muted; g.lineWidth = 1; g.beginPath(); let s = false;
+      for (let i = i0; i <= i1; i++) { if (!fin(ma[i])) continue; const y = base - ma[i] / mx * h; s ? g.lineTo(this.x(i), y) : g.moveTo(this.x(i), y); s = true; } g.stroke(); }
+  }
+  drawSeries(g, D, d, i0, i1) {
+    const C = this.C, w = Math.max(1, this.barW * 0.7), st = S.style;
+    if (["line", "area", "step", "baseline"].includes(st)) {
+      g.lineWidth = 1.6; g.strokeStyle = C.accent; g.beginPath();
+      for (let i = i0; i <= i1; i++) { const x = this.x(i), y = this.y(d.c[i]);
+        if (i === i0) g.moveTo(x, y); else if (st === "step") { g.lineTo(x, this.y(d.c[i-1])); g.lineTo(x, y); } else g.lineTo(x, y); }
+      if (st === "baseline") {
+        const by = this.y(d.c[i0]); g.save(); g.strokeStyle = C.muted; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(0, by); g.lineTo(D.pw, by); g.stroke(); g.restore();
+        g.save(); g.beginPath(); g.rect(0, 0, D.pw, by); g.clip(); g.strokeStyle = C.up; this.pathClose(g, d, i0, i1); g.stroke(); g.restore();
+        g.save(); g.beginPath(); g.rect(0, by, D.pw, D.mainH); g.clip(); g.strokeStyle = C.down; this.pathClose(g, d, i0, i1); g.stroke(); g.restore();
+      } else g.stroke();
+      if (st === "area") { g.lineTo(this.x(i1), D.mainH); g.lineTo(this.x(i0), D.mainH); g.closePath(); const gr = g.createLinearGradient(0, 0, 0, D.mainH); gr.addColorStop(0, C.accent + "55"); gr.addColorStop(1, C.accent + "00"); g.fillStyle = gr; g.fill(); }
+      return;
+    }
+    for (let i = i0; i <= i1; i++) {
+      const up = d.c[i] >= d.o[i], col = up ? C.up : C.down, x = Math.round(this.x(i)) + 0.5;
+      const yo = this.y(d.o[i]), yc = this.y(d.c[i]), yh = this.y(d.h[i]), yl = this.y(d.l[i]);
+      g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 1;
+      if (st === "ohlc") { g.beginPath(); g.moveTo(x, yh); g.lineTo(x, yl); g.moveTo(x - w/2, yo); g.lineTo(x, yo); g.moveTo(x, yc); g.lineTo(x + w/2, yc); g.stroke(); continue; }
+      g.beginPath(); g.moveTo(x, yh); g.lineTo(x, Math.min(yo, yc)); g.moveTo(x, Math.max(yo, yc)); g.lineTo(x, yl); g.stroke();
+      const top = Math.min(yo, yc), bh = Math.max(1, Math.abs(yc - yo));
+      if (st === "hollow" && up) g.strokeRect(x - w/2, top, w, bh); else g.fillRect(x - w/2, top, w, bh);
+    }
+  }
+  pathClose(g, d, i0, i1) { g.beginPath(); for (let i = i0; i <= i1; i++) { const x = this.x(i), y = this.y(d.c[i]); i === i0 ? g.moveTo(x, y) : g.lineTo(x, y); } }
+  line(g, v, i0, i1, color, width = 1.3, dash) {
+    g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); let s = false;
+    for (let i = Math.max(0, i0); i <= Math.min(v.length - 1, i1); i++) { if (!fin(v[i])) { s = false; continue; } const x = this.x(i), y = this._yfn(v[i]); s ? g.lineTo(x, y) : g.moveTo(x, y); s = true; }
+    g.stroke(); g.setLineDash([]);
+  }
+  drawOverlay(g, r, i0, i1) {
+    this._yfn = p => this.y(p);
+    if (r.fill) { const [a, b, col] = r.fill; g.fillStyle = col; g.beginPath(); const pts = [];
+      for (let i = Math.max(0, i0); i <= Math.min(a.length - 1, i1); i++) if (fin(a[i]) && fin(b[i])) pts.push(i);
+      if (pts.length) { pts.forEach((i, k) => k ? g.lineTo(this.x(i), this.y(a[i])) : g.moveTo(this.x(i), this.y(a[i]))); for (let k = pts.length - 1; k >= 0; k--) g.lineTo(this.x(pts[k]), this.y(b[pts[k]])); g.closePath(); g.fill(); } }
+    (r.lines || []).forEach(l => this.line(g, l.v, i0, i1, l.color, l.width, l.dash));
+    if (r.dots) { g.fillStyle = r.dotColor; for (let i = Math.max(0, i0); i <= Math.min(r.dots.length - 1, i1); i++) if (fin(r.dots[i])) { g.beginPath(); g.arc(this.x(i), this.y(r.dots[i]), Math.max(1.2, Math.min(2.5, this.barW / 4)), 0, 7); g.fill(); } }
+  }
+  drawSub(g, D, top, r, cfg, i0, i1) {
+    const C = this.C; g.save(); g.beginPath(); g.rect(0, top, D.W, D.subH); g.clip();
+    g.strokeStyle = C.border; g.beginPath(); g.moveTo(0, top + 0.5); g.lineTo(D.W, top + 0.5); g.stroke();
+    if (!r) { g.restore(); return; }
+    let lo = Infinity, hi = -Infinity; const acc = v => { for (let i = i0; i <= i1; i++) if (fin(v[i])) { lo = Math.min(lo, v[i]); hi = Math.max(hi, v[i]); } };
+    (r.lines || []).forEach(l => acc(l.v)); if (r.hist) acc(r.hist); (r.levels || []).forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+    if (r.range) { lo = r.range[0]; hi = r.range[1]; }
+    if (!fin(lo) || hi === lo) { hi = (fin(hi) ? hi : 0) + 1; lo = (fin(lo) ? lo : 0) - 1; }
+    const pad = 6, yf = v => top + pad + (hi - v) / (hi - lo) * (D.subH - 2*pad); this._yfn = yf;
+    g.setLineDash([3, 3]); g.strokeStyle = C.border; (r.levels || []).forEach(v => { g.beginPath(); g.moveTo(0, yf(v)); g.lineTo(D.pw, yf(v)); g.stroke(); }); g.setLineDash([]);
+    if (r.hist) { const w = Math.max(1, this.barW * 0.7), z = yf(Math.max(lo, Math.min(hi, 0)));
+      for (let i = i0; i <= i1; i++) { const v = r.hist[i]; if (!fin(v)) continue; const prev = r.hist[i-1];
+        g.fillStyle = v >= 0 ? (fin(prev) && v < prev ? C.up + "88" : C.up) : (fin(prev) && v > prev ? C.down + "88" : C.down);
+        const y = yf(v); g.fillRect(this.x(i) - w/2, Math.min(y, z), w, Math.max(1, Math.abs(z - y))); } }
+    (r.lines || []).forEach(l => this.line(g, l.v, i0, i1, l.color, l.width, l.dash));
+    g.fillStyle = C.muted; g.font = "11px system-ui"; g.textBaseline = "top"; g.textAlign = "left";
+    const def = INDICATORS[cfg.type], prm = Object.values(Object.assign({}, def.params, cfg.params)).join(", ");
+    const last = (r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[Math.min(this.data.n - 1, Math.round(this.mouse ? this.iAt(this.mouse.x) : this.data.n - 1))];
+    g.fillText(`${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}`, 8, top + 4);
+    g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = C.muted;
+    [hi, lo].forEach(v => g.fillText(Math.abs(v) >= 1e5 ? fmtVol(v) : v.toFixed(Math.abs(v) < 10 ? 2 : 0), D.pw + 6, yf(v)));
+    if (this.mouse && this.mouse.y > top && this.mouse.y < top + D.subH) this.drawCrossV(g, D, top, top + D.subH);
+    g.restore();
+  }
+  drawCrossV(g, D, a, b) { if (!this.mouse || S.tool === "none") return; g.save(); g.strokeStyle = this.C.cross; g.setLineDash([4, 4]); g.beginPath(); const x = Math.round(this.x(Math.round(this.iAt(this.mouse.x)))) + 0.5; g.moveTo(x, a); g.lineTo(x, b); g.stroke(); g.restore(); }
+  hline(g, D, p, color, label, dash, x0 = 0, width = 1) {
+    const y = Math.round(this.y(p)) + 0.5; g.save(); g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); g.moveTo(x0, y); g.lineTo(D.pw, y); g.stroke(); g.restore();
+    if (label) { g.save(); g.font = "11px system-ui"; g.fillStyle = color; g.textAlign = "right"; g.textBaseline = "bottom"; g.fillText(label, D.pw - 4, y - 2); g.restore(); }
+  }
+  drawLevels(g, D) {
+    for (const lv of this.an.levels || []) this.hline(g, D, lv.price, this.C.level, `${lv.kind === "support" ? "S" : "R"} ${fmtP(lv.price)} · ${lv.touches} touches`, [6, 4], 0, Math.min(3, lv.touches * 0.6));
+  }
+  waveLabelPos(w, p) { return {x: this.x(w.i), y: this.y(w.price) + (p === "H" ? -14 : 14)}; }
+  drawWaves(g, D) {
+    const an = this.an, C = this.C;
+    if (S.wave.pivots) { g.fillStyle = C.muted; for (const p of an.pivots) { g.beginPath(); g.arc(this.x(p.i), this.y(p.price), 2.5, 0, 7); g.fill(); } }
+    if (!S.wave.waves) return;
+    if (S.wave.history) for (const h of an.history || []) this.drawCount(g, h, C.alt, false, 0.6);
+    const counts = [an.primary, ...(an.alternates || [])].filter(Boolean);
+    const prim = this.altShown != null && counts[this.altShown] ? counts[this.altShown] : an.primary;
+    if (S.wave.alternates) for (const a of counts) if (a !== prim) this.drawCount(g, a, C.alt, false, 0.9, [5, 4]);
+    if (!prim) return;
+    if (S.wave.channels) for (const ch of prim.channels || []) {
+      g.save(); g.strokeStyle = C.deg; g.globalAlpha = 0.55; g.setLineDash([6, 4]); g.lineWidth = 1;
+      for (const seg of [ch.base, ch.parallel]) { const [a, b] = seg, sl = (b.price - a.price) / (b.i - a.i || 1), iE = this.end + 2;
+        g.beginPath(); g.moveTo(this.x(a.i), this.y(a.price)); g.lineTo(this.x(iE), this.y(a.price + sl * (iE - a.i))); g.stroke(); }
+      g.restore();
+    }
+    this.drawCount(g, prim, C.deg, true, 1);
+    if (S.wave.targets) {
+      const last = prim.waves[prim.waves.length - 1], x0 = this.x(last.i);
+      for (const t of prim.targets) this.hline(g, D, t.price, C.target, `${t.kind === "retracement" ? "R" : "T"} ${(t.ratio*100).toFixed(1)}% ${t.ref} = ${fmtP(t.price)}`, [2, 3], x0);
+      if (fin(prim.invalidation)) this.hline(g, D, prim.invalidation, C.bad, `Invalidation ${fmtP(prim.invalidation)}`, [8, 4], this.x(prim.waves[0].i));
+    }
+    if (S.wave.fibs && this.hoverWave) this.drawSmartFib(g, D, this.hoverWave.count, this.hoverWave.k);
+  }
+  drawCount(g, c, color, main, alpha, dash) {
+    const ws = c.waves; g.save(); g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = main ? 1.8 : 1.1; g.setLineDash(dash || []);
+    g.beginPath(); ws.forEach((w, k) => k ? g.lineTo(this.x(w.i), this.y(w.price)) : g.moveTo(this.x(w.i), this.y(w.price))); g.stroke(); g.setLineDash([]);
+    ws.forEach((w, k) => {
+      if (k === 0) return;
+      const isHigh = k + 1 < ws.length ? w.price > ws[k+1].price || w.price > ws[k-1].price : w.price > ws[k-1].price;
+      const x = this.x(w.i), y = this.y(w.price) + (isHigh ? -15 : 15), r = main ? 9 : 7;
+      g.fillStyle = this.C.bg; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+      g.strokeStyle = color; g.lineWidth = main ? 1.6 : 1; if (!w.confirmed) g.setLineDash([2, 2]); g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); g.setLineDash([]);
+      g.fillStyle = color; g.font = `${main ? 700 : 600} ${main ? 11 : 10}px system-ui`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(w.label, x, y + 0.5);
+      if (main) (this._labelHits || (this._labelHits = [])).push({x, y, r, count: c, k});
+    });
+    g.restore();
+  }
+  drawSmartFib(g, D, c, k) {
+    // Hovering an impulsive wave (1/3/5/A/C/W/Y) shows how far the next correction may retrace it.
+    // Hovering a corrective wave (2/4/B/X) measures it against the prior wave and projects the
+    // next wave as multiples of that prior wave from the hovered wave's end.
+    const ws = c.waves, C = this.C, b = ws[k], corrective = ["2", "4", "B", "X"].includes(b.label) && k >= 2;
+    const a = corrective ? ws[k-2] : ws[k-1], m = corrective ? ws[k-1] : b, len = m.price - a.price;
+    g.save();
+    for (const r of [0.236, 0.382, 0.5, 0.618, 0.786]) { const p = m.price - len * r; this.hline(g, D, p, C.fib, `${(r*100).toFixed(1)}% of wave ${m.label} = ${fmtP(p)}`, [3, 3], this.x(a.i)); }
+    if (corrective) {
+      const ratio = Math.abs((m.price - b.price) / len); this.hline(g, D, b.price, C.fib, `wave ${b.label} retraced ${(ratio*100).toFixed(1)}%`, [], this.x(m.i), 1.5);
+      for (const r of [1, 1.618, 2.618]) { const p = b.price + len * r; this.hline(g, D, p, C.target, `${r} x wave ${m.label} from ${b.label} = ${fmtP(p)}`, [1, 3], this.x(b.i)); }
+    }
+    g.globalAlpha = 0.12; g.fillStyle = C.fib; g.fillRect(this.x(a.i), Math.min(this.y(a.price), this.y(m.price)), this.x(m.i) - this.x(a.i), Math.abs(this.y(a.price) - this.y(m.price)));
+    g.restore();
+  }
+  drawAlertLines(g, D) {
+    for (const a of S.alerts) if (a.symbol === this.symbol && a.active && (a.type === "above" || a.type === "below" || a.type === "cross"))
+      this.hline(g, D, a.price, this.C.alert, `⏰ ${a.type} ${fmtP(a.price)}`, [6, 3]);
+  }
+  /* ---- user drawings */
+  pt(p) { return {x: this.x(this.idxOfT(p.t)), y: this.y(p.p)}; }
+  geom(dw) {
+    const P = dw.pts.map(p => this.pt(p)), D = this._dims, segs = [];
+    switch (dw.type) {
+      case "trend": case "measure": if (P[1]) segs.push([P[0], P[1]]); break;
+      case "ray": if (P[1]) { const dx = P[1].x - P[0].x, dy = P[1].y - P[0].y, k = dx ? (D.pw * 2) / Math.abs(dx) : 1e4; segs.push([P[0], {x: P[0].x + dx*k, y: P[0].y + dy*k}]); } break;
+      case "hline": segs.push([{x: 0, y: P[0].y}, {x: D.pw, y: P[0].y}]); break;
+      case "vline": segs.push([{x: P[0].x, y: 0}, {x: P[0].x, y: D.mainH}]); break;
+      case "rect": if (P[1]) { const [a, b] = P; segs.push([a, {x: b.x, y: a.y}], [{x: b.x, y: a.y}, b], [b, {x: a.x, y: b.y}], [{x: a.x, y: b.y}, a]); } break;
+      case "fib": if (P[1]) for (const r of FIB_R) { const y = this.y(dw.pts[1].p + (dw.pts[0].p - dw.pts[1].p) * r); segs.push([{x: Math.min(P[0].x, P[1].x), y}, {x: D.pw, y}]); } break;
+      case "fibext": if (P[2]) { const L0 = dw.pts[1].p - dw.pts[0].p; for (const r of FIB_E) { const y = this.y(dw.pts[2].p + L0 * r); segs.push([{x: P[2].x, y}, {x: D.pw, y}]); } segs.push([P[0], P[1]], [P[1], P[2]]); } else if (P[1]) segs.push([P[0], P[1]]); break;
+      case "impulse": case "abc": case "wxy": for (let k = 1; k < P.length; k++) segs.push([P[k-1], P[k]]); break;
+      case "text": case "alertline": break;
+    }
+    return {P, segs};
+  }
+  drawDrawings(g, D) {
+    const all = [...this.drawings]; if (this.draft) all.push(this.draft);
+    for (const dw of all) {
+      const {P, segs} = this.geom(dw), col = dw.color || this.C.draw, sel = dw === this.sel;
+      g.save(); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = sel ? 2.2 : 1.4; g.font = "11px system-ui";
+      if (dw.type === "rect" && P[1]) { g.globalAlpha = 0.12; g.fillRect(Math.min(P[0].x, P[1].x), Math.min(P[0].y, P[1].y), Math.abs(P[1].x - P[0].x), Math.abs(P[1].y - P[0].y)); g.globalAlpha = 1; }
+      g.beginPath(); for (const [a, b] of segs) { g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); } g.stroke();
+      if (dw.type === "fib" && P[1]) FIB_R.forEach(r => { const p = dw.pts[1].p + (dw.pts[0].p - dw.pts[1].p) * r; g.fillText(`${r} (${fmtP(p)})`, Math.min(P[0].x, P[1].x) + 3, this.y(p) - 3); });
+      if (dw.type === "fibext" && P[2]) FIB_E.forEach(r => { const p = dw.pts[2].p + (dw.pts[1].p - dw.pts[0].p) * r; g.fillText(`${r} (${fmtP(p)})`, P[2].x + 3, this.y(p) - 3); });
+      if (dw.type === "hline") { g.textAlign = "right"; g.fillText(fmtP(dw.pts[0].p), D.pw - 4, P[0].y - 3); }
+      if (dw.type === "text") { g.font = "13px system-ui"; g.fillText(dw.text || "", P[0].x, P[0].y); }
+      if (dw.type === "measure" && P[1]) { const dp = dw.pts[1].p - dw.pts[0].p, bars = Math.round(this.idxOfT(dw.pts[1].t) - this.idxOfT(dw.pts[0].t));
+        g.globalAlpha = 0.15; g.fillStyle = dp >= 0 ? this.C.up : this.C.down; g.fillRect(Math.min(P[0].x, P[1].x), Math.min(P[0].y, P[1].y), Math.abs(P[1].x - P[0].x), Math.abs(P[1].y - P[0].y)); g.globalAlpha = 1;
+        g.fillStyle = this.C.text; g.textAlign = "center"; g.fillText(`${fmtP(dp, dw.pts[0].p)} (${fmtPct(dp / dw.pts[0].p * 100)}) · ${bars} bars`, (P[0].x + P[1].x) / 2, Math.min(P[0].y, P[1].y) - 6); }
+      if (WAVE_SEQ[dw.type]) P.forEach((p, k) => { const lab = WAVE_SEQ[dw.type][k]; if (k === 0) return; const prev = P[k-1], above = p.y < prev.y, y = p.y + (above ? -13 : 13);
+        g.fillStyle = this.C.bg; g.beginPath(); g.arc(p.x, y, 8.5, 0, 7); g.fill(); g.strokeStyle = col; g.beginPath(); g.arc(p.x, y, 8.5, 0, 7); g.stroke();
+        g.fillStyle = col; g.textAlign = "center"; g.textBaseline = "middle"; g.font = "700 11px system-ui"; g.fillText(lab, p.x, y + 0.5); g.textBaseline = "alphabetic"; });
+      if (sel || dw === this.draft) { g.fillStyle = this.C.bg; P.forEach(p => { g.beginPath(); g.arc(p.x, p.y, 4, 0, 7); g.fill(); g.stroke(); }); }
+      g.restore();
+    }
+  }
+  hitDrawing(x, y) {
+    let best = null, bd = 7;
+    for (const dw of this.drawings) {
+      const {P, segs} = this.geom(dw);
+      P.forEach(p => { const dd = Math.hypot(p.x - x, p.y - y); if (dd < bd) { bd = dd; best = dw; } });
+      segs.forEach(([a, b]) => { const dd = segDist(x, y, a, b); if (dd < bd) { bd = dd; best = dw; } });
+      if (dw.type === "text" && P[0] && x >= P[0].x - 4 && x <= P[0].x + 8 * (dw.text || "").length && Math.abs(y - P[0].y + 5) < 10) { best = dw; bd = 0; }
+    }
+    return best;
+  }
+  drawLast(g, D, d) {
+    const p = this.data.c[this.data.n - 1], up = p >= this.data.o[this.data.n - 1];
+    this.hline(g, D, p, up ? this.C.up : this.C.down, null, [1, 2]);
+  }
+  drawCrossMain(g, D) {
+    if (!this.mouse || this.mouse.y > D.mainH || this.mouse.x > D.pw) { if (this.mouse && this.mouse.y > D.mainH) this.drawCrossV(g, D, 0, D.mainH); return; }
+    g.save(); g.strokeStyle = this.C.cross; g.setLineDash([4, 4]); g.beginPath();
+    const x = Math.round(this.x(Math.round(this.iAt(this.mouse.x)))) + 0.5, y = Math.round(this.mouse.sy ?? this.mouse.y) + 0.5;
+    g.moveTo(x, 0); g.lineTo(x, D.mainH); g.moveTo(0, y); g.lineTo(D.pw, y); g.stroke(); g.restore();
+  }
+  axisLabel(g, x, y, text, bg, fg = "#fff") { g.font = "11px system-ui"; const w = g.measureText(text).width + 10; g.fillStyle = bg; g.fillRect(x, y - 9, Math.max(w, AXIS_W - 2), 18); g.fillStyle = fg; g.textAlign = "left"; g.textBaseline = "middle"; g.fillText(text, x + 5, y); }
+  drawAxes(g, D, d) {
+    const C = this.C, ref = this.data.c[this.data.n - 1];
+    g.fillStyle = C.bg; g.fillRect(D.pw, 0, AXIS_W, D.H); g.fillRect(0, D.H - TIME_H, D.W, TIME_H);
+    g.strokeStyle = C.border; g.beginPath(); g.moveTo(D.pw + 0.5, 0); g.lineTo(D.pw + 0.5, D.H); g.moveTo(0, D.H - TIME_H + 0.5); g.lineTo(D.W, D.H - TIME_H + 0.5); g.stroke();
+    g.font = "11px system-ui"; g.fillStyle = C.muted; g.textBaseline = "middle"; g.textAlign = "left";
+    for (const v of this.priceTicks(D)) { const y = this.y(v); if (y > 8 && y < D.mainH - 8) g.fillText(fmtP(v, ref), D.pw + 6, y); }
+    g.textAlign = "center";
+    for (const i of this.timeTicks(D)) { const x = this.x(i); if (x < 20 || x > D.pw - 20) continue; const t = this.tOfIdx(i), dt = new Date(t);
+      const dayStart = IV_MS[this.interval] < 864e5 && dt.getHours() === 0 && dt.getMinutes() === 0;
+      g.fillText(dayStart ? `${MON[dt.getMonth()]} ${dt.getDate()}` : fmtTime(t, this.interval), x, D.H - TIME_H / 2); }
+    // last price + targets tags
+    const last = this.data.c[this.data.n - 1]; const ly = this.y(last);
+    if (ly > 0 && ly < D.mainH) this.axisLabel(g, D.pw + 1, ly, fmtP(last, ref), last >= this.data.o[this.data.n - 1] ? C.up : C.down);
+    const prim = this.an && S.wave.waves ? ([this.an.primary, ...(this.an.alternates || [])][this.altShown ?? 0] || this.an.primary) : null;
+    if (prim && S.wave.targets) { prim.targets.forEach(t => { const y = this.y(t.price); if (y > 0 && y < D.mainH) this.axisLabel(g, D.pw + 1, y, fmtP(t.price, ref), C.target); });
+      if (fin(prim.invalidation)) { const y = this.y(prim.invalidation); if (y > 0 && y < D.mainH) this.axisLabel(g, D.pw + 1, y, fmtP(prim.invalidation, ref), C.bad); } }
+    if (this.mouse && this.mouse.x < D.pw) {
+      if (this.mouse.y < D.mainH) this.axisLabel(g, D.pw + 1, this.mouse.sy ?? this.mouse.y, fmtP(this.pAt(this.mouse.sy ?? this.mouse.y), ref), C.cross, C.bg);
+      const i = Math.round(this.iAt(this.mouse.x)), t = this.tOfIdx(i), s = fmtTime(t, this.interval, true); g.font = "11px system-ui";
+      const w = g.measureText(s).width + 12, x = Math.max(0, Math.min(D.pw - w, this.x(i) - w / 2));
+      g.fillStyle = C.cross; g.fillRect(x, D.H - TIME_H + 1, w, TIME_H - 2); g.fillStyle = C.bg; g.textAlign = "center"; g.fillText(s, x + w / 2, D.H - TIME_H / 2);
+    }
+  }
+  drawLegend(d, inds) {
+    const n = this.data.n, i = this.mouse && this.mouse.x < this._dims.pw ? Math.max(0, Math.min(n - 1, Math.round(this.iAt(this.mouse.x)))) : n - 1;
+    const r = this.data, ch = i ? (r.c[i] / r.c[i-1] - 1) * 100 : 0;
+    let s = `O ${fmtP(r.o[i])}  H ${fmtP(r.h[i])}  L ${fmtP(r.l[i])}  C ${fmtP(r.c[i])}  ${fmtPct(ch)}  V ${fmtVol(r.v[i])}`;
+    S.indicators.forEach((x, k) => { const def = INDICATORS[x.type]; if (!def || !def.overlay || !inds[k] || !inds[k].lines) return; const v = inds[k].lines[0].v[i]; if (fin(v)) s += `\n${def.name.split(" (")[0]}: ${fmtP(v, r.c[i])}`; });
+    const p = this.an && this.an.primary; if (p && S.wave.waves) s += `\nWave ${p.current_wave} · ${p.type} · ${p.direction} · score ${p.score}`;
+    this.el.querySelector(".legend").textContent = s;
+  }
+
+  /* ---- interaction */
+  bind() {
+    const cv = this.canvas;
+    const pos = e => { const r = cv.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; };
+    const snap = (m) => {
+      const i = this.iAt(m.x); let p = this.pAt(m.y), sy = m.y;
+      if (S.magnet && this.data && TOOL_PTS[S.tool] && S.tool !== "measure") { const k = Math.max(0, Math.min(this.data.n - 1, Math.round(i)));
+        let bd = 24; for (const v of [this.data.o[k], this.data.h[k], this.data.l[k], this.data.c[k]]) { const dd = Math.abs(this.y(v) - m.y); if (dd < bd) { bd = dd; p = v; sy = this.y(v); } }
+        return {t: this.tOfIdx(k), p, sy}; }
+      return {t: this.tOfIdx(i), p, sy};
+    };
+    cv.addEventListener("mousedown", e => {
+      if (e.button !== 0 || !this.data) return; if (S.active !== this.idx) setActive(this.idx);
+      const m = pos(e), D = this._dims;
+      if (m.x > D.pw) { this.drag = {type: "yscale", y: m.y, lo: this.yLo, hi: this.yHi}; this.yAuto = false; return; }
+      if (m.y > D.mainH) { this.drag = {type: "pan", x: m.x, off: this.off}; return; }
+      const tool = S.tool, need = TOOL_PTS[tool];
+      if (tool === "erase") { const h = this.hitDrawing(m.x, m.y); if (h) { this.drawings.splice(this.drawings.indexOf(h), 1); saveDrawings(); this.draw(); } return; }
+      if (tool === "alertline") { const p = this.pAt(m.y); openAlert({symbol: this.symbol, interval: this.interval, type: p > this.data.c[this.data.n-1] ? "above" : "below", price: +p.toFixed(decimals(p))}); setTool("cursor"); return; }
+      if (need) {
+        if (this._measureDone) { this.draft = null; this._measureDone = false; }
+        const s = snap(m);
+        if (tool === "text") { const txt = prompt("Note text:"); if (txt) { this.drawings.push({type: "text", pts: [{t: s.t, p: s.p}], text: txt.slice(0, 200)}); saveDrawings(); } setTool("cursor"); this.draw(); return; }
+        if (!this.draft) this.draft = {type: tool, pts: [{t: s.t, p: s.p}]};
+        else this.draft.pts[this.draft.pts.length - 1] = {t: s.t, p: s.p};
+        if (this.draft.pts.length >= need) { if (tool !== "measure") { this.drawings.push(this.draft); saveDrawings(); this.sel = this.draft; } this.draft = tool === "measure" ? this.draft : null; if (tool !== "measure") setTool("cursor"); else this._measureDone = true; }
+        else this.draft.pts.push({t: s.t, p: s.p});
+        this.draw(); return;
+      }
+      // cursor: handles, drawings, else pan
+      if (this.sel) { const {P} = this.geom(this.sel); const k = P.findIndex(p => Math.hypot(p.x - m.x, p.y - m.y) < 7); if (k >= 0) { this.drag = {type: "handle", k}; return; } }
+      const hit = this.hitDrawing(m.x, m.y);
+      if (hit) { this.sel = hit; this.drag = {type: "move", m, pts: hit.pts.map(p => ({...p}))}; this.draw(); return; }
+      this.sel = null; this.drag = {type: "pan", x: m.x, y: m.y, off: this.off, lo: this.yLo, hi: this.yHi}; this.draw();
+    });
+    window.addEventListener("mousemove", e => {
+      if (!this.drag) return; const m = pos(e), dr = this.drag;
+      if (dr.type === "pan") { this.off = dr.off - (m.x - dr.x) / this.barW;
+        if (!this.yAuto && dr.lo != null) { const dp = (m.y - dr.y) / this._dims.mainH * (dr.hi - dr.lo); this.yLo = dr.lo + dp; this.yHi = dr.hi + dp; } }
+      else if (dr.type === "yscale") { const f = Math.exp((m.y - dr.y) / 150), mid = (dr.hi + dr.lo) / 2, half = (dr.hi - dr.lo) / 2 * f; this.yLo = mid - half; this.yHi = mid + half; }
+      else if (dr.type === "handle") { const s = snap(m); this.sel.pts[dr.k] = {t: s.t, p: s.p}; }
+      else if (dr.type === "move") { const di = this.iAt(m.x) - this.iAt(dr.m.x), dp = this.pAt(m.y) - this.pAt(dr.m.y);
+        this.sel.pts = dr.pts.map(p => ({t: this.tOfIdx(this.idxOfT(p.t) + Math.round(di)), p: p.p + dp})); }
+      this.draw();
+    });
+    window.addEventListener("mouseup", () => { if (this.drag && (this.drag.type === "handle" || this.drag.type === "move")) saveDrawings(); this.drag = null; });
+    cv.addEventListener("mousemove", e => {
+      const m = pos(e); if (!this.data) return;
+      const s = TOOL_PTS[S.tool] ? snap(m) : null; this.mouse = {x: m.x, y: m.y, sy: s ? s.sy : undefined};
+      if (this.draft && s && !this._measureDone) { this.draft.pts[this.draft.pts.length - 1] = {t: s.t, p: s.p}; }
+      this.hoverWave = null;
+      for (const h of this._labelHits || []) if (Math.hypot(h.x - m.x, h.y - m.y) <= h.r + 3) { this.hoverWave = h; break; }
+      cv.style.cursor = this.hoverWave ? "pointer" : m.x > (this._dims ? this._dims.pw : 1e9) ? "ns-resize" : "crosshair";
+      this.draw(); syncCross(this, m);
+    });
+    cv.addEventListener("mouseleave", () => { this.mouse = null; this.hoverWave = null; this.draw(); syncCross(this, null); });
+    cv.addEventListener("wheel", e => {
+      e.preventDefault(); if (!this.data) return; const m = pos(e), D = this._dims;
+      if (m.x > D.pw) { this.yAuto = false; const f = Math.exp(e.deltaY / 400), mid = (this.yHi + this.yLo) / 2, half = (this.yHi - this.yLo) / 2 * f; this.yLo = mid - half; this.yHi = mid + half; this.draw(); return; }
+      const iBefore = this.iAt(m.x); this.barW *= Math.exp(-e.deltaY / 500); this.barW = Math.max(1.5, Math.min(60, this.barW));
+      // keep the bar under the cursor fixed
+      const n = this.data.n; this.off = iBefore - (n - 1) + (D.pw - m.x) / this.barW - 0.5 + 0;
+      this.draw();
+    }, {passive: false});
+    cv.addEventListener("dblclick", e => { const m = pos(e); if (m.x > this._dims.pw) { this.yAuto = true; this.draw(); } });
+    cv.addEventListener("contextmenu", e => { e.preventDefault(); if (!this.data) return; const m = pos(e); setActive(this.idx); showCtx(e.clientX, e.clientY, this, this.pAt(m.y), m); });
+    this.el.querySelector('[data-a="alert"]').addEventListener("click", () => { setActive(this.idx); openAlert({symbol: this.symbol, interval: this.interval}); });
+  }
+}
+function segDist(x, y, a, b) { const dx = b.x - a.x, dy = b.y - a.y, L2 = dx*dx + dy*dy; let t = L2 ? ((x - a.x)*dx + (y - a.y)*dy) / L2 : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(x - a.x - t*dx, y - a.y - t*dy); }
+function syncCross(src, m) {
+  // linked crosshair: show the same time on other charts of the same symbol
+  for (const c of S.panes) if (c !== src && c.data && c.symbol === src.symbol) {
+    if (!m || !src.data) { c.mouse = null; } else { const t = src.tOfIdx(src.iAt(m.x)); c._dims = c._dims || c.dims(); c._start = c._start ?? 0; c.mouse = {x: c.x(c.idxOfT(t)), y: -100}; }
+    c.draw();
+  }
+}
+
+/* ============================================================ layout & panes */
+function buildPanes() {
+  const g = $("#grid"); g.innerHTML = ""; S.panes = [];
+  const lay = S.layout, n = lay === "4" ? 4 : lay.startsWith("2") ? 2 : 1;
+  g.style.gridTemplateColumns = lay === "4" || lay === "2" ? "1fr 1fr" : "1fr";
+  g.style.gridTemplateRows = lay === "4" || lay === "2v" ? "1fr 1fr" : "1fr";
+  for (let i = 0; i < n; i++) { const el = document.createElement("div"); el.className = "pane"; g.appendChild(el); S.panes.push(new Chart(i, el)); }
+  if (S.active >= n) S.active = 0; setActive(S.active);
+  $$("#layoutBtns button").forEach(b => b.classList.toggle("on", b.dataset.l === lay));
+  S.panes.forEach(c => c.load(true));
+}
+function setActive(i) {
+  S.active = i; S.panes.forEach((c, k) => c.el.classList.toggle("active", k === i && S.panes.length > 1));
+  const c = S.panes[i]; if (!c) return;
+  $("#symBtn").innerHTML = esc(c.symbol) + " &#9662;";
+  $$("#ivBtns button").forEach(b => b.classList.toggle("on", b.dataset.iv === c.interval));
+  renderCount();
+}
+const activeChart = () => S.panes[S.active];
+function setSymbol(sym) {
+  const c = activeChart(); c.symbol = sym; store.set("symbol", S.symbol);
+  if (S.link) S.panes.forEach(p => p.load(true)); else c.load(true);
+  setActive(S.active); renderWatch();
+}
+function setTool(t) {
+  S.tool = t; S.panes.forEach(c => { c.draft = null; c._measureDone = false; c.draw(); });
+  $$("#tools button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
+}
+function redrawAll() { S.panes.forEach(c => c.draw()); }
+function reloadAll() { S.panes.forEach(c => c.load(false)); }
+
+/* ============================================================ header */
+function initHeader() {
+  const ivs = ["1M", "5M", "15M", "30M", "60M", "4H", "8H", "12H", "1D"];
+  $("#ivBtns").innerHTML = ivs.map(v => `<button data-iv="${v}">${IV_LABEL[v]}</button>`).join("");
+  $("#ivBtns").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const c = activeChart(); c.interval = b.dataset.iv; c.load(true); setActive(S.active); });
+  $("#styleSel").value = S.style;
+  $("#styleSel").addEventListener("change", e => { S.style = e.target.value; store.set("style", S.style); S.panes.forEach(c => { c.ha = null; c.draw(); }); });
+  $("#symBtn").addEventListener("click", () => openSym());
+  $("#indBtn").addEventListener("click", openInd);
+  $("#waveBtn").addEventListener("click", e => { e.stopPropagation(); $("#waveMenu").classList.toggle("open"); });
+  document.addEventListener("click", e => { if (!e.target.closest("#waveMenu")) $("#waveMenu").classList.remove("open"); if (!e.target.closest("#ctx")) $("#ctx").style.display = "none"; });
+  $$("#waveMenu [data-w]").forEach(cb => { cb.checked = !!S.wave[cb.dataset.w]; cb.addEventListener("change", () => { S.wave[cb.dataset.w] = cb.checked; store.set("wave", S.wave); redrawAll(); }); });
+  $("#degSel").value = S.degree; $("#degSel").addEventListener("change", e => { S.degree = e.target.value; store.set("degree", S.degree); S.panes.forEach(c => { c.altShown = null; c.load(false); }); });
+  $("#pctIn").value = S.pct || ""; $("#pctIn").addEventListener("change", e => { const v = parseFloat(e.target.value); S.pct = fin(v) && v >= 0.1 && v <= 50 ? v : null; e.target.value = S.pct || ""; store.set("pct", S.pct); reloadAll(); });
+  $("#layoutBtns").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.layout = b.dataset.l; store.set("layout", S.layout); buildPanes(); });
+  const tog = (id, key, after) => { const b = $(id); b.classList.toggle("on", !!S[key]); b.addEventListener("click", () => { S[key] = !S[key]; store.set(key, S[key]); b.classList.toggle("on", S[key]); after && after(); }); };
+  tog("#linkBtn", "link", () => { if (S.link) { S.panes.forEach(c => c.load(true)); } });
+  tog("#logBtn", "log", redrawAll);
+  tog("#magBtn", "magnet");
+  $("#shotBtn").addEventListener("click", () => { const c = activeChart(); const a = document.createElement("a"); a.download = `${c.symbol}_${c.interval}.png`; a.href = c.canvas.toDataURL("image/png"); a.click(); });
+  const theme = store.get("theme", null); if (theme) document.documentElement.dataset.theme = theme;
+  $("#themeBtn").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; document.documentElement.dataset.theme = t; store.set("theme", t); redrawAll(); });
+  $("#sbBtn").addEventListener("click", () => { $("#body").classList.toggle(innerWidth < 900 ? "sbm" : "nosb"); setTimeout(redrawAll, 30); });
+  $("#tools").innerHTML = TOOLS.map(t => t ? `<button data-t="${t[0]}" title="${esc(t[2])}">${t[1]}</button>` : `<div class="tsep"></div>`).join("");
+  $("#tools").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const t = b.dataset.t;
+    if (t === "clear") { const c = activeChart(); if (c.drawings.length && confirm(`Delete all ${c.drawings.length} drawings on ${c.symbol}?`)) { S.drawings[c.key] = []; saveDrawings(); redrawAll(); } return; }
+    setTool(S.tool === t ? "cursor" : t); });
+  setTool("cursor");
+  document.addEventListener("keydown", e => {
+    if (e.target.matches("input,select,textarea")) return;
+    const c = activeChart(); if (!c) return;
+    if (e.key === "Escape") { setTool("cursor"); c.sel = null; closeModals(); c.draw(); }
+    else if ((e.key === "Delete" || e.key === "Backspace") && c.sel) { c.drawings.splice(c.drawings.indexOf(c.sel), 1); c.sel = null; saveDrawings(); c.draw(); }
+    else if (e.key === "ArrowLeft") { c.off -= 5; c.draw(); } else if (e.key === "ArrowRight") { c.off += 5; c.draw(); }
+    else if (e.key === "+" || e.key === "=") { c.barW *= 1.2; c.draw(); } else if (e.key === "-") { c.barW /= 1.2; c.draw(); }
+    else if (e.key === "Home") { c.off = 8; c.yAuto = true; c.draw(); }
+    else if (/^[a-zA-Z0-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) { openSym(e.key.toUpperCase()); e.preventDefault(); }
+  });
+  window.addEventListener("resize", redrawAll);
+}
+
+/* ============================================================ context menu */
+function showCtx(x, y, c, price, m) {
+  const p = +price.toFixed(decimals(price)), menu = $("#ctx");
+  const items = [
+    [`Add alert at ${fmtP(p)}`, () => openAlert({symbol: c.symbol, interval: c.interval, type: p > c.data.c[c.data.n-1] ? "above" : "below", price: p})],
+    [`Horizontal line at ${fmtP(p)}`, () => { c.drawings.push({type: "hline", pts: [{t: c.tOfIdx(c.iAt(m.x)), p}]}); saveDrawings(); c.draw(); }],
+    ["Reset chart view", () => { c.off = 8; c.barW = 8; c.yAuto = true; c.draw(); }],
+    [`Add ${c.symbol} to watchlist`, () => addToList(c.symbol)],
+    ["Show wave count details", () => showTab("count")],
+  ];
+  if (c.sel) items.unshift(["Delete selected drawing", () => { c.drawings.splice(c.drawings.indexOf(c.sel), 1); c.sel = null; saveDrawings(); c.draw(); }]);
+  menu.innerHTML = items.map((it, k) => `<div data-k="${k}">${esc(it[0])}</div>`).join("");
+  menu.style.left = Math.min(x, innerWidth - 220) + "px"; menu.style.top = Math.min(y, innerHeight - items.length * 32 - 10) + "px"; menu.style.display = "block";
+  menu.onclick = e => { const d = e.target.closest("[data-k]"); if (d) { menu.style.display = "none"; items[+d.dataset.k][1](); } };
+}
+
+/* ============================================================ modals */
+function closeModals() { $$(".modal").forEach(m => m.classList.remove("show")); }
+$$(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m || e.target.closest("[data-close]")) closeModals(); }));
+let symPick = null;
+function openSym(initial = "", onPick = null) {
+  symPick = onPick; $("#symModal").classList.add("show"); const q = $("#symQ"); q.value = initial; q.focus(); renderSymList();
+}
+function renderSymList() {
+  const q = $("#symQ").value.trim().toUpperCase().replace("/", "_");
+  const list = S.symbols.filter(s => s.includes(q)).sort((a, b) => (a.startsWith(q) ? 0 : 1) - (b.startsWith(q) ? 0 : 1) || (a.endsWith("_USDT") ? 0 : 1) - (b.endsWith("_USDT") ? 0 : 1) || a.localeCompare(b)).slice(0, 80);
+  $("#symList").innerHTML = list.map((s, k) => `<div data-s="${s}" class="${k ? "" : "hl"}"><span>${esc(s.replace("_", " / "))}</span><span class="muted small">spot</span></div>`).join("") || `<div class="muted">No match</div>`;
+}
+$("#symQ").addEventListener("input", renderSymList);
+$("#symQ").addEventListener("keydown", e => { if (e.key === "Enter") { const f = $("#symList [data-s]"); if (f) pickSym(f.dataset.s); } });
+$("#symList").addEventListener("click", e => { const d = e.target.closest("[data-s]"); if (d) pickSym(d.dataset.s); });
+function pickSym(s) { closeModals(); if (symPick) { const f = symPick; symPick = null; f(s); } else setSymbol(s); }
+
+function openInd() { $("#indModal").classList.add("show"); $("#indQ").value = ""; renderInd(); }
+function renderInd() {
+  const q = $("#indQ").value.toLowerCase();
+  $("#indActive").innerHTML = S.indicators.map((x, k) => { const def = INDICATORS[x.type]; if (!def) return "";
+    const prm = Object.entries(Object.assign({}, def.params, x.params)).map(([n, v]) => `<label class="small">${esc(n)} <input data-k="${k}" data-p="${esc(n)}" type="number" step="any" value="${v}" style="width:64px"></label>`).join(" ");
+    return `<div class="row card"><b style="flex:1">${esc(def.name)}</b>${prm}<button class="x" data-rm="${k}" title="Remove">&times;</button></div>`; }).join("") || `<div class="muted">None</div>`;
+  $("#indList").innerHTML = Object.entries(INDICATORS).filter(([k, d]) => d.name.toLowerCase().includes(q) || k.includes(q))
+    .map(([k, d]) => `<div data-add="${k}"><span>${esc(d.name)}</span><span class="muted small">${d.overlay ? "overlay" : "pane"}</span></div>`).join("");
+}
+$("#indQ").addEventListener("input", renderInd);
+$("#indList").addEventListener("click", e => { const d = e.target.closest("[data-add]"); if (!d) return; S.indicators.push({type: d.dataset.add, params: {...INDICATORS[d.dataset.add].params}}); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
+$("#indActive").addEventListener("click", e => { const b = e.target.closest("[data-rm]"); if (!b) return; S.indicators.splice(+b.dataset.rm, 1); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
+$("#indActive").addEventListener("change", e => { const i = e.target; if (!i.dataset.p) return; const v = parseFloat(i.value); if (!fin(v) || v <= 0 && i.dataset.p !== "mult") return;
+  const x = S.indicators[+i.dataset.k]; x.params = Object.assign({}, x.params, {[i.dataset.p]: Number.isInteger(INDICATORS[x.type].params[i.dataset.p]) ? Math.max(1, Math.min(500, Math.round(v))) : v});
+  store.set("indicators", S.indicators); redrawAll(); });
+
+/* ============================================================ sidebar tabs */
+function showTab(t) { S.tab = t; store.set("tab", t); $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === t)); $$(".tabbody").forEach(b => b.hidden = b.id !== "tab-" + t);
+  ({watch: renderWatch, scan: renderScan, alerts: renderAlerts, count: renderCount})[t](); }
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.t); });
+
+/* ---- watchlist */
+function spark(v) { if (!v || v.length < 2) return ""; const lo = Math.min(...v), hi = Math.max(...v), w = 46, h = 16;
+  const pts = v.map((x, i) => `${(i / (v.length - 1) * w).toFixed(1)},${(h - (hi === lo ? h/2 : (x - lo) / (hi - lo) * h)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" width="${w}" height="${h}"><polyline fill="none" stroke="${v[v.length-1] >= v[0] ? "var(--up)" : "var(--down)"}" stroke-width="1.3" points="${pts}"/></svg>`; }
+function addToList(sym) { const l = S.lists[S.list]; if (!l.includes(sym)) { l.push(sym); store.set("lists", S.lists); pollQuotes(); } renderWatch(); }
+function renderWatch() {
+  const box = $("#tab-watch"); if (box.hidden) return;
+  const syms = S.lists[S.list] || [], cur = activeChart() && activeChart().symbol;
+  box.innerHTML = `<div class="row"><select id="wlSel">${Object.keys(S.lists).map(n => `<option ${n === S.list ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+    <button id="wlNew" title="New list">+ List</button><button id="wlRen" title="Rename list">&#9998;</button><button id="wlDel" title="Delete list">&#128465;</button><span class="spacer"></span><button id="wlAdd">+ Symbol</button></div>
+    <table><thead><tr><th>Symbol</th><th class="num">Last</th><th class="num">24h</th><th>24h trend</th><th title="Wave in progress (60M, current degree)">Wave</th><th></th></tr></thead><tbody>
+    ${syms.map(s => { const q = S.quotes[s] || {}, w = S.waveCol[s];
+      return `<tr class="click" data-s="${s}" style="${s === cur ? "font-weight:600" : ""}"><td>${esc(s.replace("_", "/"))}</td><td class="num">${q.error ? '<span class="muted" title="' + esc(q.error) + '">err</span>' : fmtP(q.last)}</td>
+      <td class="num ${q.change_pct >= 0 ? "up" : "down"}">${fmtPct(q.change_pct)}</td><td>${spark(q.spark)}</td>
+      <td title="${w ? esc(w.status) : ""}">${w && w.current_wave ? `<span class="${w.move === "up" ? "up" : "down"}">${esc(w.current_wave)} ${w.move === "up" ? "↑" : "↓"}</span>` : '<span class="muted">–</span>'}</td>
+      <td><button class="x" data-rm="${s}" title="Remove">&times;</button></td></tr>`; }).join("")}</tbody></table>
+    <div class="small muted" style="margin-top:6px">Click a row to chart it. Wave column: the wave in progress on the 1H chart at the current degree.</div>`;
+  $("#wlSel").onchange = e => { S.list = e.target.value; store.set("list", S.list); renderWatch(); pollQuotes(); };
+  $("#wlNew").onclick = () => { const n = (prompt("New list name:") || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = []; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
+  $("#wlRen").onclick = () => { const n = (prompt("Rename list:", S.list) || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = S.lists[S.list]; delete S.lists[S.list]; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
+  $("#wlDel").onclick = () => { if (Object.keys(S.lists).length > 1 && confirm(`Delete list "${S.list}"?`)) { delete S.lists[S.list]; S.list = Object.keys(S.lists)[0]; store.set("lists", S.lists); store.set("list", S.list); renderWatch(); } };
+  $("#wlAdd").onclick = () => openSym("", addToList);
+  box.querySelector("tbody").onclick = e => { const rm = e.target.closest("[data-rm]"); if (rm) { e.stopPropagation(); S.lists[S.list] = syms.filter(x => x !== rm.dataset.rm); store.set("lists", S.lists); renderWatch(); return; }
+    const tr = e.target.closest("tr[data-s]"); if (tr) setSymbol(tr.dataset.s); };
+}
+
+/* ---- scanner */
+const SCAN_FILTERS = {any: "Any count", w3: "In wave 3", w5: "In wave 5", pull: "Wave 2 / 4 pullback", c: "Wave C (correction ending)", done: "Structure complete", b: "Wave B"};
+function scanMatch(r) {
+  const f = S.scan.filter, w = r.current_wave;
+  if (r.error || !r.pattern) return false;
+  if (S.scan.dir !== "any" && r.direction !== S.scan.dir) return false;
+  if ((r.score || 0) < S.scan.min) return false;
+  return f === "any" || (f === "w3" && w === "3") || (f === "w5" && w === "5") || (f === "pull" && (w === "2" || w === "4")) || (f === "c" && w === "C") || (f === "b" && w === "B") || (f === "done" && /complete/.test(r.status || ""));
+}
+function renderScan() {
+  const box = $("#tab-scan"); if (box.hidden) return; const sc = S.scan;
+  const rows = S.scanRows.filter(scanMatch), [sk, sd] = S.scanSort;
+  rows.sort((a, b) => { const x = a[sk], y = b[sk]; return (x == null) - (y == null) || (x < y ? -1 : x > y ? 1 : 0) * sd; });
+  box.innerHTML = `<div class="row">Scan <select id="scSrc"><option value="list">Watchlist "${esc(S.list)}"</option><option value="all">Top symbols (first 30)</option><option value="custom">Custom list</option></select></div>
+    <div class="row" id="scCustomRow" ${sc.src === "custom" ? "" : "hidden"}><input id="scCustom" style="flex:1" placeholder="BTC_USDT, ETH_USDT" value="${esc(sc.custom || "")}"></div>
+    <div class="row">${["5M", "15M", "60M", "4H", "1D"].map(iv => `<label class="small"><input type="checkbox" data-iv="${iv}" ${sc.ivs.includes(iv) ? "checked" : ""}> ${IV_LABEL[iv]}</label>`).join("")}</div>
+    <div class="row">Degree <select id="scDeg">${["minor", "intermediate", "primary"].map(d => `<option ${d === (sc.degree || S.degree) ? "selected" : ""}>${d}</option>`).join("")}</select>
+      <button id="scRun" class="on">Run scan</button><span id="scInfo" class="small muted"></span></div>
+    <div class="row"><select id="scF">${Object.entries(SCAN_FILTERS).map(([k, v]) => `<option value="${k}" ${k === sc.filter ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select id="scDir"><option value="any">Both</option><option value="bullish" ${sc.dir === "bullish" ? "selected" : ""}>Bullish</option><option value="bearish" ${sc.dir === "bearish" ? "selected" : ""}>Bearish</option></select>
+      Score &ge; <input id="scMin" type="number" min="0" max="100" value="${sc.min}" style="width:56px"></div>
+    <table><thead><tr>${[["symbol", "Symbol"], ["interval", "TF"], ["current_wave", "Wave"], ["pattern", "Pattern"], ["score", "Score"], ["next_target", "Target"], ["risk_pct", "Inv %"]].map(([k, l]) => `<th data-k="${k}" class="${["score", "next_target", "risk_pct"].includes(k) ? "num" : ""}">${l}${sk === k ? (sd > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r, k) => `<tr class="click" data-k="${S.scanRows.indexOf(r)}" title="${esc(r.status)}"><td>${esc(r.symbol.replace("_", "/"))}</td><td>${IV_LABEL[r.interval]}</td>
+      <td class="${r.move === "up" ? "up" : "down"}">${esc(r.current_wave)} ${r.move === "up" ? "↑" : "↓"}</td><td class="small ${r.direction === "bullish" ? "up" : "down"}" title="${esc(r.pattern + ", " + r.direction)}">${esc(r.pattern.replace(/^correction \((.*)\)$/, "$1"))}</td>
+      <td class="num">${r.score}</td><td class="num">${fmtP(r.next_target, r.last)}</td><td class="num">${fin(r.risk_pct) ? r.risk_pct.toFixed(1) : "–"}</td></tr>`).join("")}</tbody></table>
+    ${S.scanRows.length && !rows.length ? '<div class="muted" style="margin-top:8px">No matches for this filter.</div>' : ""}
+    ${S.scanRows.filter(r => r.error).length ? `<div class="small muted" style="margin-top:6px">${S.scanRows.filter(r => r.error).length} symbol/timeframe(s) failed to load.</div>` : ""}
+    <div class="small muted" style="margin-top:8px">The scanner lists where the automatic count says each market is in its wave structure. Matches are pattern descriptions, not trade signals.</div>`;
+  $("#scSrc").value = sc.src;
+  const save = () => store.set("scanCfg", S.scan);
+  $("#scSrc").onchange = e => { sc.src = e.target.value; save(); renderScan(); };
+  if ($("#scCustom")) $("#scCustom").onchange = e => { sc.custom = e.target.value; save(); };
+  $$("#tab-scan [data-iv]").forEach(cb => cb.onchange = () => { sc.ivs = $$("#tab-scan [data-iv]").filter(x => x.checked).map(x => x.dataset.iv); save(); });
+  $("#scDeg").onchange = e => { sc.degree = e.target.value; save(); };
+  $("#scF").onchange = e => { sc.filter = e.target.value; save(); renderScan(); };
+  $("#scDir").onchange = e => { sc.dir = e.target.value; save(); renderScan(); };
+  $("#scMin").onchange = e => { sc.min = Math.max(0, Math.min(100, +e.target.value || 0)); save(); renderScan(); };
+  $("#scRun").onclick = runScan;
+  box.querySelector("thead").onclick = e => { const th = e.target.closest("th[data-k]"); if (!th) return; S.scanSort = [th.dataset.k, S.scanSort[0] === th.dataset.k ? -S.scanSort[1] : -1]; renderScan(); };
+  box.querySelector("tbody").onclick = e => { const tr = e.target.closest("tr[data-k]"); if (!tr) return; const r = S.scanRows[+tr.dataset.k]; const c = activeChart(); c.interval = r.interval; setSymbol(r.symbol); };
+}
+async function runScan() {
+  const sc = S.scan; let syms = sc.src === "list" ? S.lists[S.list] : sc.src === "custom" ? (sc.custom || "").split(/[\s,]+/).map(s => s.toUpperCase().replace("/", "_")).filter(Boolean) : S.symbols.filter(s => s.endsWith("_USDT")).slice(0, 30);
+  syms = syms.slice(0, 40); if (!syms.length || !sc.ivs.length) { $("#scInfo").textContent = "Pick symbols and timeframes"; return; }
+  $("#scInfo").textContent = "Scanning…"; $("#scRun").disabled = true;
+  try {
+    const r = await api(`/api/scan?symbols=${encodeURIComponent(syms.join(","))}&intervals=${sc.ivs.join(",")}&degree=${sc.degree || S.degree}`);
+    S.scanRows = r.rows; $("#scInfo") && ($("#scInfo").textContent = `${r.rows.length} checked`);
+  } catch (e) { $("#scInfo").textContent = "Error: " + e.message; }
+  finally { renderScan(); $("#scInfo").textContent = `${S.scanRows.length} checked at ${new Date().toLocaleTimeString()}`; }
+}
+
+/* ---- alerts */
+const ALERT_TYPES = {above: "Price crosses above", below: "Price crosses below", target: "Price reaches a wave target", invalid: "Wave count invalidated", wave: "Wave in progress changes"};
+let alertDraft = null;
+function openAlert(pre) {
+  const c = activeChart(); alertDraft = Object.assign({symbol: c.symbol, interval: c.interval, type: "above", price: c.data ? +c.data.c[c.data.n-1].toFixed(decimals(c.data.c[c.data.n-1])) : 0, popup: true, sound: true, speak: false, notify: false, once: true, note: ""}, pre || {});
+  const a = alertDraft;
+  $("#alertForm").innerHTML = `<div class="row"><b>${esc(a.symbol)}</b> <select id="alIv">${Object.keys(IV_MS).map(v => `<option value="${v}" ${v === a.interval ? "selected" : ""}>${IV_LABEL[v]}</option>`).join("")}</select></div>
+    <div class="row"><select id="alType">${Object.entries(ALERT_TYPES).map(([k, v]) => `<option value="${k}" ${k === a.type ? "selected" : ""}>${v}</option>`).join("")}</select>
+    <input id="alPrice" type="number" step="any" value="${a.price}" style="width:130px"></div>
+    <div class="row"><input id="alNote" placeholder="Note (optional)" style="flex:1" maxlength="120" value="${esc(a.note)}"></div>
+    <div class="row"><label><input type="checkbox" id="alPopup" ${a.popup ? "checked" : ""}> Popup</label><label><input type="checkbox" id="alSound" ${a.sound ? "checked" : ""}> Sound</label>
+    <label><input type="checkbox" id="alSpeak" ${a.speak ? "checked" : ""}> Spoken</label><label><input type="checkbox" id="alNotify" ${a.notify ? "checked" : ""}> Desktop notification</label></div>
+    <div class="row"><label><input type="checkbox" id="alOnce" ${a.once ? "checked" : ""}> Only once (otherwise re-arms)</label></div>
+    <div class="small muted" style="margin-bottom:8px">Alerts are checked in this browser tab while Wave Lab is open (every refresh). Wave alerts use the ${esc(S.degree)} degree.</div>
+    <div class="row"><span class="spacer"></span><button data-close>Cancel</button><button class="on" id="alSave">Create alert</button></div>`;
+  const syncPrice = () => { $("#alPrice").hidden = !["above", "below"].includes($("#alType").value); }; syncPrice(); $("#alType").onchange = syncPrice;
+  $("#alSave").onclick = async () => {
+    const v = {...a, interval: $("#alIv").value, type: $("#alType").value, price: parseFloat($("#alPrice").value), note: $("#alNote").value.slice(0, 120),
+      popup: $("#alPopup").checked, sound: $("#alSound").checked, speak: $("#alSpeak").checked, notify: $("#alNotify").checked, once: $("#alOnce").checked,
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), active: true, created: Date.now(), degree: S.degree, state: null};
+    if (["above", "below"].includes(v.type) && !fin(v.price)) return alert("Enter a price");
+    if (v.notify && "Notification" in window && Notification.permission === "default") { try { await Notification.requestPermission(); } catch (e) {} }
+    S.alerts.push(v); store.set("alerts", S.alerts); closeModals(); renderAlerts(); redrawAll(); checkAlerts();
+  };
+  $("#alertModal").classList.add("show");
+}
+function renderAlerts() {
+  const box = $("#tab-alerts"); if (box.hidden) return;
+  box.innerHTML = `<div class="row"><button class="on" id="alNew">+ New alert</button><span class="spacer"></span><button id="alTest" title="Test sound and voice">Test</button></div>
+    ${S.alerts.length ? "" : '<div class="muted">No alerts. Right-click a chart or use the &#9200; tool to add one at a price.</div>'}
+    ${S.alerts.map(a => `<div class="card"><div class="row" style="margin:0"><b>${esc(a.symbol.replace("_", "/"))}</b><span class="muted">${IV_LABEL[a.interval]}</span><span class="spacer"></span>
+      <label class="small"><input type="checkbox" data-act="${a.id}" ${a.active ? "checked" : ""}> active</label><button class="x" data-del="${a.id}">&times;</button></div>
+      <div>${esc(ALERT_TYPES[a.type])}${["above", "below"].includes(a.type) ? " " + fmtP(a.price) : ""}</div>
+      ${a.note ? `<div class="small muted">${esc(a.note)}</div>` : ""}${a.firedAt ? `<div class="small muted">Last fired ${new Date(a.firedAt).toLocaleString()}</div>` : ""}</div>`).join("")}
+    <h4>Log</h4>${S.alertLog.slice(-30).reverse().map(l => `<div class="small"><span class="muted">${new Date(l.at).toLocaleString()}</span> ${esc(l.text)}</div>`).join("") || '<div class="muted small">Empty</div>'}
+    ${S.alertLog.length ? '<div class="row" style="margin-top:6px"><button id="alClr">Clear log</button></div>' : ""}`;
+  $("#alNew").onclick = () => openAlert();
+  $("#alTest").onclick = () => fire({symbol: "TEST", interval: "60M", sound: true, speak: true, popup: true}, "Test alert: sound and voice work.");
+  if ($("#alClr")) $("#alClr").onclick = () => { S.alertLog = []; store.set("alertLog", []); renderAlerts(); };
+  box.onclick = e => { const d = e.target.closest("[data-del]"); if (d) { S.alerts = S.alerts.filter(a => a.id !== d.dataset.del); store.set("alerts", S.alerts); renderAlerts(); redrawAll(); } };
+  box.onchange = e => { const c = e.target.closest("[data-act]"); if (c) { const a = S.alerts.find(x => x.id === c.dataset.act); a.active = c.checked; if (a.active) a.state = null; store.set("alerts", S.alerts); redrawAll(); } };
+}
+let audioCtx = null;
+function beep() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); const t = audioCtx.currentTime;
+  [0, 0.18, 0.36].forEach((d, k) => { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = [880, 1175, 1568][k]; g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.2, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.16); o.connect(g).connect(audioCtx.destination); o.start(t + d); o.stop(t + d + 0.18); }); } catch (e) {} }
+function toast(title, body) { const t = document.createElement("div"); t.className = "toast"; t.innerHTML = `<b>${esc(title)}</b>${esc(body)}`; $("#toasts").appendChild(t); setTimeout(() => t.remove(), 12000); t.onclick = () => t.remove(); }
+function fire(a, text) {
+  const title = `⏰ ${a.symbol.replace("_", "/")} ${IV_LABEL[a.interval] || ""}`;
+  if (a.popup) toast(title, text + (a.note ? ` (${a.note})` : ""));
+  if (a.sound) beep();
+  if (a.speak && "speechSynthesis" in window) { try { speechSynthesis.speak(new SpeechSynthesisUtterance(`${a.symbol.replace("_", " ")} alert. ${text}`)); } catch (e) {} }
+  if (a.notify && "Notification" in window && Notification.permission === "granted") { try { new Notification(title, {body: text}); } catch (e) {} }
+  if (a.symbol !== "TEST") { S.alertLog.push({at: Date.now(), text: `${a.symbol} ${IV_LABEL[a.interval]}: ${text}`}); S.alertLog = S.alertLog.slice(-200); store.set("alertLog", S.alertLog); }
+}
+async function checkAlerts() {
+  const act = S.alerts.filter(a => a.active); if (!act.length) return;
+  const syms = [...new Set(act.map(a => a.symbol))];
+  let quotes = {}; try { quotes = (await api("/api/quotes?symbols=" + syms.join(","))).quotes; } catch (e) { return; }
+  const anCache = {}; let fired = false;
+  for (const a of act) {
+    const q = quotes[a.symbol]; if (!q || !fin(q.last)) continue; const p = q.last; let msg = null;
+    if (a.type === "above" || a.type === "below") {
+      const side = p >= a.price ? "above" : "below";
+      if (a.state && a.state !== side && side === a.type) msg = `price ${fmtP(p)} crossed ${a.type} ${fmtP(a.price)}`;
+      if (!a.state && side === a.type) msg = `price ${fmtP(p)} is ${a.type} ${fmtP(a.price)}`;
+      a.state = side;
+    } else {
+      const key = `${a.symbol}|${a.interval}|${a.degree}`;
+      try { anCache[key] = anCache[key] || await api(`/api/analysis?symbol=${a.symbol}&interval=${a.interval}&degree=${a.degree || S.degree}&limit=500`); } catch (e) { continue; }
+      const pr = anCache[key].primary; if (!pr) continue;
+      const sig = `${pr.type}|${pr.waves[0].t}|${pr.current_wave}`;
+      if (a.type === "wave") { if (a.state && a.state !== sig) msg = `wave count now: wave ${pr.current_wave} of ${pr.type} (${pr.direction}). ${pr.status}`; a.state = sig; }
+      if (a.type === "target") { const hit = pr.targets.find(t => pr.move === "up" ? p >= t.price && (a.state == null || a.state < t.price) : p <= t.price && (a.state == null || a.state > t.price));
+        if (hit && a.state != null) msg = `price ${fmtP(p)} reached ${(hit.ratio*100).toFixed(1)}% ${hit.kind} target ${fmtP(hit.price)} (wave ${pr.current_wave})`; a.state = p; }
+      if (a.type === "invalid") { if (a.state && a.state.sig === sig && fin(a.state.inv) && (pr.trend === "up" ? p < a.state.inv : p > a.state.inv)) msg = `price ${fmtP(p)} broke invalidation ${fmtP(a.state.inv)} of the wave ${pr.current_wave} count`;
+        a.state = {sig, inv: pr.invalidation}; }
+    }
+    if (msg) { fire(a, msg); a.firedAt = Date.now(); if (a.once) a.active = false; fired = true; }
+  }
+  store.set("alerts", S.alerts);
+  if (fired) { renderAlerts(); redrawAll(); }
+}
+
+/* ---- count details */
+function renderCount() {
+  const box = $("#tab-count"); if (!box || box.hidden) return;
+  const c = activeChart(); const an = c && c.an;
+  if (!an) { box.innerHTML = '<div class="muted">Loading…</div>'; return; }
+  const counts = [an.primary, ...(an.alternates || [])].filter(Boolean), shown = c.altShown ?? 0;
+  const card = (p, k) => `<div class="card" style="${k === shown ? "border-color:var(--accent)" : ""}">
+    <div class="row" style="margin:0"><b>${k === 0 ? "Primary" : "Alternate " + k}: ${esc(p.type)}</b><span class="spacer"></span><span class="badge">${p.score}</span></div>
+    <div class="${p.direction === "bullish" ? "up" : "down"}">${esc(p.direction)} · now in wave ${esc(p.current_wave)} (${p.move})</div>
+    <div class="small">${esc(p.status)}</div>
+    <div class="small muted">Waves: ${p.waves.map(w => `${w.label}=${fmtP(w.price)}`).join(" · ")}</div>
+    ${k === shown ? "" : `<button data-show="${k}" style="margin-top:6px">Show on chart</button>`}
+    ${k === shown ? `<h4>Rules</h4>${p.rules.map(r => `<div class="${r.ok ? "ok" : "no"} small">${esc(r.text)}</div>`).join("")}
+    <h4>Guidelines</h4>${p.guidelines.map(g => `<div class="small">${esc(g.text)} <span class="muted">${Math.round(g.fit*100)}%</span><div class="bar"><i style="width:${g.fit*100}%"></i></div></div>`).join("")}
+    <h4>Targets for the wave in progress</h4>${p.targets.map(t => `<div class="small">${t.kind === "retracement" ? "Retrace" : "Extend"} ${(t.ratio*100).toFixed(1)}% of ${esc(t.ref)}: <b>${fmtP(t.price)}</b></div>`).join("") || '<div class="small muted">None</div>'}
+    ${fin(p.invalidation) ? `<div class="small" style="margin-top:4px;color:var(--bad)">Invalidation: ${fmtP(p.invalidation)}</div>` : ""}` : ""}</div>`;
+  box.innerHTML = `<div class="small muted" style="margin-bottom:6px">${esc(c.symbol)} · ${IV_LABEL[c.interval]} · ${esc(an.degree)} degree · swing threshold ${fin(an.threshold) ? (an.threshold*100).toFixed(2) + "%" : "–"} · ${an.pivots.length} pivots</div>
+    ${counts.length ? counts.map(card).join("") : '<div class="card">No count satisfies the Elliott rules at this degree. Try another degree or timeframe.</div>'}
+    ${(an.history || []).length ? `<h4>Earlier completed patterns</h4>${an.history.map(h => `<div class="small">${esc(h.type)} ${esc(h.direction)} · ${fmtTime(h.waves[0].t, c.interval, true)} → ${fmtTime(h.waves[h.waves.length-1].t, c.interval, true)} · score ${h.score}</div>`).join("")}` : ""}
+    ${(an.levels || []).length ? `<h4>Support / resistance clusters</h4>${an.levels.map(l => `<div class="small">${l.kind === "support" ? "Support" : "Resistance"} ${fmtP(l.price)} <span class="muted">(${l.touches} swing touches)</span></div>`).join("")}` : ""}
+    <div class="small muted" style="margin-top:10px">${esc(an.note)} The score measures how closely swing ratios match textbook guidelines; it is not a probability.</div>`;
+  box.onclick = e => { const b = e.target.closest("[data-show]"); if (b) { c.altShown = +b.dataset.show || null; c.draw(); renderCount(); } };
+}
+
+/* ============================================================ polling */
+async function pollQuotes() {
+  const syms = (S.lists[S.list] || []).slice(0, 40); if (!syms.length) return;
+  try { const r = await api("/api/quotes?symbols=" + syms.join(",")); Object.assign(S.quotes, r.quotes); renderWatch(); } catch (e) { setStatus("Quotes failed: " + e.message); }
+}
+async function pollWaveCol() {
+  const syms = (S.lists[S.list] || []).slice(0, 40); if (!syms.length) return;
+  try { const r = await api(`/api/scan?symbols=${syms.join(",")}&intervals=60M&degree=${S.degree}`); r.rows.forEach(x => S.waveCol[x.symbol] = x); renderWatch(); } catch (e) {}
+}
+let tick = 0;
+function startPolling(sec) {
+  setInterval(() => {
+    tick++;
+    reloadAll(); pollQuotes(); checkAlerts();
+    if (tick % 4 === 0) pollWaveCol();
+    setStatus(`Updated ${new Date().toLocaleTimeString()} · refresh every ${sec}s`);
+  }, sec * 1000);
+}
+
+/* ============================================================ init */
+(async function init() {
+  initHeader();
+  try { S.meta = await api("/api/meta"); } catch (e) { setStatus("Server unreachable: " + e.message); return; }
+  const b = $("#feedBadge"); b.textContent = S.meta.feed_label; b.className = "badge " + (S.meta.feed === "demo" ? "demo" : "live");
+  if (S.meta.fallback_reason) b.title = "Pionex unreachable: " + S.meta.fallback_reason;
+  try { S.symbols = (await api("/api/symbols")).symbols; } catch (e) { S.symbols = []; }
+  if (S.symbols.length && !S.symbols.includes(S.symbol)) S.symbol = S.symbols.includes("BTC_USDT") ? "BTC_USDT" : S.symbols[0];
+  buildPanes(); showTab(S.tab);
+  pollQuotes(); pollWaveCol();
+  setStatus(`Ready · ${S.meta.feed_label}`);
+  startPolling(S.meta.feed === "pionex" ? 15 : 10);
+})();
+</script>
+</body>
+</html>

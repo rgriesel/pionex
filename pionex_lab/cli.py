@@ -344,6 +344,25 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_waves(args, paths, cfg, mandate):
+    """Wave Lab: local Elliott Wave charts, scanner, watchlists and alerts (read-only)."""
+    from .waves.feeds import pick_feed
+    from .waves.server import serve
+    _setup_logging(paths, "wavelab", args.verbose)
+    feed = pick_feed(args.feed, market_path=paths.market,
+                     client=_client(cfg) if args.feed in ("auto", "pionex") else None)
+
+    def ready(httpd):
+        url = f"http://{args.host}:{httpd.server_address[1]}/"
+        note = f" (fallback: {feed.fallback_reason})" if getattr(feed, "fallback_reason", None) else ""
+        print(f"Wave Lab ready on {url}  data: {feed.label}{note}", flush=True)
+        if args.open:
+            import webbrowser
+            webbrowser.open(url)
+    serve(feed, host=args.host, port=args.port, ready=ready)
+    return 0
+
+
 MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}
 # A frozen hypothesis REJECTED (not merely short of data) in this many cycles stops consuming the
 # daily research budget; re-testing the same frozen grid adds no information. It stays in the paper
@@ -601,6 +620,12 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
+    p = sub.add_parser("waves", help="Wave Lab: local Elliott Wave charting, scanner, watchlists, alerts")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8770)
+    p.add_argument("--feed", choices=["auto", "pionex", "store", "demo"], default="auto",
+                   help="auto: Pionex public data if reachable, else collected bars, else labelled demo data")
+    p.add_argument("--open", action="store_true", help="open the browser")
     sub.add_parser("run", help="supervise collector + paper engine + dashboard")
     p = sub.add_parser("report", help="export the dashboard report JSON")
     p.add_argument("--out")

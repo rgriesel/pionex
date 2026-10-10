@@ -504,6 +504,18 @@ class ElliottAbcContinuation1h(Strategy):
                             {"retrace": (p5 - lo) / (p5 - p0), "w1": w1, "w3": w3, "w5": w5})
 
 
+class ElliottAbcContinuation(ElliottAbcContinuation1h):
+    """Pre-registered 2026-10-10, before any 5-minute test. The identical frozen rules and grid on
+    5-minute bars (1h context). Reason, from signal FREQUENCY only (no outcomes): on 1h bars the
+    strict rules produced 3-9 complete impulse+A+B setups per symbol in ~417 days and a single
+    signal overall, so the 1h version cannot be evaluated. Elliott structure is described as
+    fractal; 5m bars give ~12x the swings, and 5m patterns complete within the 4h holding cap.
+    The 48-bar breakout window is 4 hours here; time exit 48 bars (4h)."""
+    name = "elliott_abc_continuation"
+    base_interval, context_interval = "5M", "60M"
+    max_hold_bars = 48
+
+
 class FundingExtreme1h(Strategy):
     """Pre-registered 2026-10-08, before any test on any data. First hypothesis on information
     other than OHLCV: every price-pattern hypothesis so far had ~0 gross expectancy. When the
@@ -597,7 +609,7 @@ class DeepPullback1h(Strategy):
 
 STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength,
                                         CapitulationReversal, BandSnapbackScalp, UsOpenBreakoutScalp,
-                                        FundingSettlementBounce)}
+                                        FundingSettlementBounce, ElliottAbcContinuation)}
 
 
 def _hourly(cls):

@@ -124,6 +124,8 @@ What happens on first start:
    2026-10-09 also added `elliott_abc_continuation_1h`: objective, point-in-time Elliott wave rules
    (k x ATR zigzag pivots known only once confirmed; 5-wave impulse obeying the three rules, ABC
    correction retracing 38.2-78.6%, buy the first close above the B high; optional RSI divergence).
+   On 1h bars those rules fired once in ~417 days, so 2026-10-10 added the identical rules on
+   5-minute bars as `elliott_abc_continuation` (still rare: ~47 signals a year across BTC and ETH).
 
    The engine reloads the frozen candidates within an hour (or on restart). A strategy can
    trade the paper book only if the risk gate accepts it. The gate needs a research-derived,

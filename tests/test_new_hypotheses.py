@@ -246,6 +246,7 @@ class Mandate(unittest.TestCase):
         from helpers import mandate
         q = mandate().qualification
         for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_settlement_bounce",
+                     "elliott_abc_continuation",
                      "funding_extreme_1h", "elliott_abc_continuation_1h", "session_drift_1h",
                      "deep_pullback_1h"):
             cls = catalog.ALL[name]

@@ -201,6 +201,29 @@ Wave counts are pattern hypotheses with known subjectivity. A score measures how
 ratios match textbook guidelines. It is not a probability, a forecast, a trade signal or evidence
 of profitability.
 
+### Wave alerts (watch-only, for manual trading)
+
+`python3 -m pionex_lab wave-alerts` (or the supervisor, when `var/wave_alerts.json` exists) runs the
+Wave Lab engine on every closed bar and sends entry/close alerts. It never places orders: the
+user decides and trades. Rules v1, fixed on 2026-10-10:
+
+- **Open** when the primary count has just entered a driving wave (3 or 5 of an impulse, C of a
+  correction, or a new 1 after a completed A-B-C), in that wave's direction, and *all* of these
+  agree: Elliott Wave Oscillator sign, RSI(14) vs 50, close vs EMA(50), score >= 60, and the
+  invalidation level on the correct side and <= 5% away. One alert per setup.
+- **Close** on a close through the invalidation recorded at entry (stop), at the recorded target,
+  when the wave in progress points against the position on two consecutive closes, or after 168
+  bars.
+- Every evaluation, alert and position is stored in `var/wave_alerts.db`, with gross and net basis
+  points (taker fee each side; spread, slippage and futures funding excluded), so the rules can
+  be judged on evidence. Alerts are rule outputs, not financial advice.
+
+`var/wave_alerts.json` example: `{"symbols": ["BTC_USDT"], "interval": "60M", "telegram_env_file":
+"C:\Users\you\.wave-alerts.env"}`. The env file holds `TELEGRAM_BOT_TOKEN=...` and
+optionally `TELEGRAM_CHAT_ID=...`. Without a chat id, the latest chat that messaged the bot is used.
+The token is read at runtime and never printed or stored. Without Telegram, alerts go to
+`var/logs/wave_alerts.log` only.
+
 ## Paper trading with the Pionex dry-run feature
 
 Pionex's official AI Kit CLI (`@pionex/pionex-ai-kit`, pinned to 0.2.55 in `tools/pionex-cli`) has

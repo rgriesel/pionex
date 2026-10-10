@@ -344,6 +344,14 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_wave_alerts(args, paths, cfg, mandate):
+    """Watch-only Elliott wave entry/close alerts for manual trading (waves/alerts.py). No orders."""
+    from .waves.alerts import run
+    paths.ensure()
+    _setup_logging(paths, "wave_alerts", args.verbose)
+    return run(paths, _stop_event(), once=args.once)
+
+
 def cmd_waves(args, paths, cfg, mandate):
     """Wave Lab: local Elliott Wave charts, scanner, watchlists and alerts (read-only)."""
     from .waves.feeds import pick_feed
@@ -410,6 +418,8 @@ def cmd_run(args, paths, cfg, mandate):
     children = {"collector": base + ["collect"], "paper": base + ["paper"], "dashboard": base + ["serve"]}
     if (paths.root / "account.json").exists():  # opt-in read-only view of the user's own account
         children["account"] = base + ["account"]
+    if (paths.root / "wave_alerts.json").exists():  # opt-in watch-only wave alerts (no orders)
+        children["wave_alerts"] = base + ["wave-alerts"]
     procs, backoff, next_start = {}, {k: 1.0 for k in children}, {k: 0.0 for k in children}
     stop = _stop_event()
     env = dict(os.environ)
@@ -610,6 +620,8 @@ def main(argv=None) -> int:
                    help="pionex: Pionex bars; proxy: labelled Binance archive bars (see fetch-proxy)")
     p.add_argument("--allow-second-cycle-for-tests", action="store_true", help=argparse.SUPPRESS)
     p = sub.add_parser("account", help="read-only snapshots of your own Pionex account (needs var/account.json)")
+    p.add_argument("--once", action="store_true")
+    p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
     p.add_argument("--months", type=int, default=12)

@@ -145,6 +145,85 @@ python3 -m unittest discover -s tests -v                                        
 python3 -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p 'test_*.py' -v   # 12 skill tests
 ```
 
+## Wave Lab (local Elliott Wave charting)
+
+A local, read-only charting app modelled on Elliott Wave platforms such as WaveBasis. It runs on
+your computer with the standard library only, and reads public Pionex market data. It needs no API
+key and has no order path.
+
+```bash
+python3 -m pionex_lab waves --open          # http://127.0.0.1:8770/
+python3 -m pionex_lab waves --feed demo     # offline: labelled SYNTHETIC prices, not market data
+```
+
+`--feed auto` (the default) uses Pionex public klines if `api.pionex.com` is reachable. Otherwise it
+uses bars already collected in `var/market.db`, and then labelled demo data. The active source is
+shown in the header badge, and demo data is shown in red.
+
+Features:
+
+- **Charts.** Canvas engine with pan, zoom, price-axis drag/zoom (double-click to reset), log scale,
+  crosshair with OHLC legend, and PNG export. Nine timeframes (1m to 1D). Eight styles: candles,
+  hollow, Heikin Ashi, OHLC, line, area, step and baseline. Light and dark themes.
+- **Layouts.** 1, 2 side-by-side, 2 stacked, or a 2x2 grid. Each pane has its own timeframe, the
+  symbol can be linked across panes, and the crosshair is synchronised.
+- **Automatic wave counts.** Zigzag swings at Minor, Intermediate or Primary degree (or a manual
+  swing %) are tested as 5-wave impulses and A-B-C zigzags or flats. Hard Elliott rules filter the
+  candidates and guideline ratios score them. You get a primary count plus alternates, earlier
+  completed patterns, the wave in progress, an invalidation level, and Fibonacci targets.
+- **Smart tools.** Smart Fibs appear when you hover a wave label. There are also Elliott channels
+  (0-2 and 2-4), support/resistance from pivot clusters, and swing pivots.
+- **Indicators.** About 20 indicators plus volume: SMA, EMA, WMA, Bollinger, Keltner, Donchian,
+  Ichimoku, Parabolic SAR, Supertrend, VWAP, RSI, MACD, the Elliott Wave Oscillator, Stochastic,
+  Stochastic RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R and ROC. All parameters are editable.
+- **Drawing tools.** Trend line, ray, horizontal and vertical lines, rectangle, Fibonacci
+  retracement, trend-based Fibonacci extension, manual wave labels (1-5, A-B-C, W-X-Y), text, a
+  measure tool and an eraser. A magnet option snaps to OHLC. Drawings can be selected, dragged or
+  deleted, and are saved per symbol.
+- **Watchlists.** Multiple lists with last price, 24h change and a sparkline. Each row also shows
+  the wave in progress on 1H.
+- **Wave scanner.** Scans a watchlist, a custom list or the top symbols across timeframes. Filters
+  include in wave 3, in wave 5, a wave 2/4 pullback, wave B, wave C, a completed structure,
+  direction and minimum score.
+- **Alerts.** Price above/below, wave target reached, count invalidated, and wave-in-progress
+  changed. They can notify by popup, sound, spoken voice or desktop notification, and have a log.
+  Alerts are checked while the page is open.
+
+**Hosted build.** `python3 tools/build_wavelab_standalone.py [OUT]` writes a single serverless page
+(default `var/wavelab-standalone.html`). It runs `wavelab/engine.js`, a browser port of the wave
+engine that a test keeps identical to `elliott.py`, on the labelled demo feed only, because a hosted
+page cannot reach the Pionex API. For live Pionex data, run the local server.
+
+Watchlists, drawings, alerts and settings are kept in the browser's local storage. The server binds
+to 127.0.0.1 only, rejects foreign `Host` headers, and accepts no writes.
+
+Wave counts are pattern hypotheses with known subjectivity. A score measures how closely the swing
+ratios match textbook guidelines. It is not a probability, a forecast, a trade signal or evidence
+of profitability.
+
+### Wave alerts (watch-only, for manual trading)
+
+`python3 -m pionex_lab wave-alerts` (or the supervisor, when `var/wave_alerts.json` exists) runs the
+Wave Lab engine on every closed bar and sends entry/close alerts. It never places orders: the
+user decides and trades. Rules v1, fixed on 2026-10-10:
+
+- **Open** when the primary count has just entered a driving wave (3 or 5 of an impulse, C of a
+  correction, or a new 1 after a completed A-B-C), in that wave's direction, and *all* of these
+  agree: Elliott Wave Oscillator sign, RSI(14) vs 50, close vs EMA(50), score >= 60, and the
+  invalidation level on the correct side and <= 5% away. One alert per setup.
+- **Close** on a close through the invalidation recorded at entry (stop), at the recorded target,
+  when the wave in progress points against the position on two consecutive closes, or after 168
+  bars.
+- Every evaluation, alert and position is stored in `var/wave_alerts.db`, with gross and net basis
+  points (taker fee each side; spread, slippage and futures funding excluded), so the rules can
+  be judged on evidence. Alerts are rule outputs, not financial advice.
+
+`var/wave_alerts.json` example: `{"symbols": ["BTC_USDT"], "interval": "60M", "telegram_env_file":
+"C:\Users\you\.wave-alerts.env"}`. The env file holds `TELEGRAM_BOT_TOKEN=...` and
+optionally `TELEGRAM_CHAT_ID=...`. Without a chat id, the latest chat that messaged the bot is used.
+The token is read at runtime and never printed or stored. Without Telegram, alerts go to
+`var/logs/wave_alerts.log` only.
+
 ## Paper trading with the Pionex dry-run feature
 
 Pionex's official AI Kit CLI (`@pionex/pionex-ai-kit`, pinned to 0.2.55 in `tools/pionex-cli`) has

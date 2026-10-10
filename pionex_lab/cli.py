@@ -344,6 +344,33 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_wave_alerts(args, paths, cfg, mandate):
+    """Watch-only Elliott wave entry/close alerts for manual trading (waves/alerts.py). No orders."""
+    from .waves.alerts import run
+    paths.ensure()
+    _setup_logging(paths, "wave_alerts", args.verbose)
+    return run(paths, _stop_event(), once=args.once)
+
+
+def cmd_waves(args, paths, cfg, mandate):
+    """Wave Lab: local Elliott Wave charts, scanner, watchlists and alerts (read-only)."""
+    from .waves.feeds import pick_feed
+    from .waves.server import serve
+    _setup_logging(paths, "wavelab", args.verbose)
+    feed = pick_feed(args.feed, market_path=paths.market,
+                     client=_client(cfg) if args.feed in ("auto", "pionex") else None)
+
+    def ready(httpd):
+        url = f"http://{args.host}:{httpd.server_address[1]}/"
+        note = f" (fallback: {feed.fallback_reason})" if getattr(feed, "fallback_reason", None) else ""
+        print(f"Wave Lab ready on {url}  data: {feed.label}{note}", flush=True)
+        if args.open:
+            import webbrowser
+            webbrowser.open(url)
+    serve(feed, host=args.host, port=args.port, ready=ready)
+    return 0
+
+
 MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}
 # A frozen hypothesis REJECTED (not merely short of data) in this many cycles stops consuming the
 # daily research budget; re-testing the same frozen grid adds no information. It stays in the paper
@@ -391,6 +418,8 @@ def cmd_run(args, paths, cfg, mandate):
     children = {"collector": base + ["collect"], "paper": base + ["paper"], "dashboard": base + ["serve"]}
     if (paths.root / "account.json").exists():  # opt-in read-only view of the user's own account
         children["account"] = base + ["account"]
+    if (paths.root / "wave_alerts.json").exists():  # opt-in watch-only wave alerts (no orders)
+        children["wave_alerts"] = base + ["wave-alerts"]
     procs, backoff, next_start = {}, {k: 1.0 for k in children}, {k: 0.0 for k in children}
     stop = _stop_event()
     env = dict(os.environ)
@@ -592,6 +621,8 @@ def main(argv=None) -> int:
     p.add_argument("--allow-second-cycle-for-tests", action="store_true", help=argparse.SUPPRESS)
     p = sub.add_parser("account", help="read-only snapshots of your own Pionex account (needs var/account.json)")
     p.add_argument("--once", action="store_true")
+    p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
+    p.add_argument("--once", action="store_true")
     p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
     p.add_argument("--months", type=int, default=12)
     p = sub.add_parser("paper", help="run the paper engine")
@@ -601,6 +632,12 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
+    p = sub.add_parser("waves", help="Wave Lab: local Elliott Wave charting, scanner, watchlists, alerts")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8770)
+    p.add_argument("--feed", choices=["auto", "pionex", "store", "demo"], default="auto",
+                   help="auto: Pionex public data if reachable, else collected bars, else labelled demo data")
+    p.add_argument("--open", action="store_true", help="open the browser")
     sub.add_parser("run", help="supervise collector + paper engine + dashboard")
     p = sub.add_parser("report", help="export the dashboard report JSON")
     p.add_argument("--out")

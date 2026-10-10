@@ -1,0 +1,7 @@
+# Check out every text file with LF line endings on every OS. The mandate lock and the skill
+# hashes are SHA-256 over exact file bytes; Git for Windows' default CRLF conversion would
+# change those bytes and latch MANDATE_HASH_MISMATCH.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

@@ -8,7 +8,10 @@
 :root{--bg:#0e1117;--panel:#151a23;--panel2:#1b2230;--border:#283142;--text:#d8deea;--muted:#8792a6;--accent:#4c8dff;
 --up:#26a69a;--down:#ef5350;--grid:#1a212d;--cross:#8f9ab0;--warn:#ffb74d;--bad:#ef5350;--good:#26a69a;
 --deg-minor:#4fc3f7;--deg-intermediate:#ffb74d;--deg-primary:#f06292;--alt:#9e9e9e;--fib:#b39ddb;--target:#66bb6a;--level:#78909c;--draw:#4c8dff;--alert:#ffa726}
-:root[data-theme=light]{--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f6;--border:#d6dce6;--text:#1b2332;--muted:#667085;--grid:#edf0f5;--cross:#6b7588;
+:root{color-scheme:dark}
+@media (prefers-color-scheme: light){:root:not([data-theme=dark]){color-scheme:light;--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f6;--border:#d6dce6;--text:#1b2332;--muted:#667085;--grid:#edf0f5;--cross:#6b7588;
+--deg-minor:#0288d1;--deg-intermediate:#ef6c00;--deg-primary:#c2185b;--alt:#8a8a8a;--fib:#7e57c2;--target:#2e7d32;--level:#607d8b}}
+:root[data-theme=light]{color-scheme:light;--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f6;--border:#d6dce6;--text:#1b2332;--muted:#667085;--grid:#edf0f5;--cross:#6b7588;
 --deg-minor:#0288d1;--deg-intermediate:#ef6c00;--deg-primary:#c2185b;--alt:#8a8a8a;--fib:#7e57c2;--target:#2e7d32;--level:#607d8b}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -85,6 +88,7 @@ footer{display:flex;gap:12px;padding:3px 10px;font-size:11px;color:var(--muted);
 .drop label{display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer}
 .spark{vertical-align:middle}
 .small{font-size:11px}
+.hosted .notify-opt{display:none}
 @media (max-width:900px){#body{grid-template-columns:42px 1fr 0}#body.sbm{grid-template-columns:42px 0 1fr}}
 </style>
 </head>
@@ -157,6 +161,9 @@ footer{display:flex;gap:12px;padding:3px 10px;font-size:11px;color:var(--muted);
   <h4>Add</h4><input id="indQ" placeholder="Filter" style="width:100%;margin-bottom:6px"><div class="list" id="indList"></div></div></div></div>
 <div class="modal" id="alertModal"><div class="dlg"><div class="hd">Create alert<button class="x" data-close>&times;</button></div>
   <div class="bd" id="alertForm"></div></div></div>
+<div class="modal" id="askModal"><div class="dlg" style="width:min(420px,94vw)"><div class="hd" id="askTitle">Confirm<button class="x" data-close>&times;</button></div>
+  <form class="bd" id="askForm"><input id="askInput" style="width:100%;margin-bottom:10px" maxlength="200" autocomplete="off">
+  <div class="row" style="margin:0"><span class="spacer"></span><button type="button" data-close>Cancel</button><button type="submit" class="on" id="askOk">OK</button></div></form></div></div>
 <div id="ctx"></div>
 <div id="toasts"></div>
 
@@ -187,6 +194,7 @@ function fmtTime(t, iv, full) {
   return IV_MS[iv] >= 864e5 ? day : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 async function api(path) {
+  if (window.WaveEngine) return window.WaveEngine.route(path);  // hosted build: no server
   const r = await fetch(path, {cache: "no-store"});
   const j = await r.json().catch(() => ({error: "bad response"}));
   if (!r.ok) throw new Error(j.error || r.statusText);
@@ -718,7 +726,7 @@ class Chart {
       if (need) {
         if (this._measureDone) { this.draft = null; this._measureDone = false; }
         const s = snap(m);
-        if (tool === "text") { const txt = prompt("Note text:"); if (txt) { this.drawings.push({type: "text", pts: [{t: s.t, p: s.p}], text: txt.slice(0, 200)}); saveDrawings(); } setTool("cursor"); this.draw(); return; }
+        if (tool === "text") { setTool("cursor"); ask("Note text", {input: true, ok: "Add note"}).then(txt => { if (txt && txt.trim()) { this.drawings.push({type: "text", pts: [{t: s.t, p: s.p}], text: txt.trim().slice(0, 200)}); saveDrawings(); this.draw(); } }); return; }
         if (!this.draft) this.draft = {type: tool, pts: [{t: s.t, p: s.p}]};
         else this.draft.pts[this.draft.pts.length - 1] = {t: s.t, p: s.p};
         if (this.draft.pts.length >= need) { if (tool !== "measure") { this.drawings.push(this.draft); saveDrawings(); this.sel = this.draft; } this.draft = tool === "measure" ? this.draft : null; if (tool !== "measure") setTool("cursor"); else this._measureDone = true; }
@@ -826,11 +834,11 @@ function initHeader() {
   tog("#magBtn", "magnet");
   $("#shotBtn").addEventListener("click", () => { const c = activeChart(); const a = document.createElement("a"); a.download = `${c.symbol}_${c.interval}.png`; a.href = c.canvas.toDataURL("image/png"); a.click(); });
   const theme = store.get("theme", null); if (theme) document.documentElement.dataset.theme = theme;
-  $("#themeBtn").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; document.documentElement.dataset.theme = t; store.set("theme", t); redrawAll(); });
+  $("#themeBtn").addEventListener("click", () => { const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"), t = cur === "light" ? "dark" : "light"; document.documentElement.dataset.theme = t; store.set("theme", t); redrawAll(); });
   $("#sbBtn").addEventListener("click", () => { $("#body").classList.toggle(innerWidth < 900 ? "sbm" : "nosb"); setTimeout(redrawAll, 30); });
   $("#tools").innerHTML = TOOLS.map(t => t ? `<button data-t="${t[0]}" title="${esc(t[2])}">${t[1]}</button>` : `<div class="tsep"></div>`).join("");
   $("#tools").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const t = b.dataset.t;
-    if (t === "clear") { const c = activeChart(); if (c.drawings.length && confirm(`Delete all ${c.drawings.length} drawings on ${c.symbol}?`)) { S.drawings[c.key] = []; saveDrawings(); redrawAll(); } return; }
+    if (t === "clear") { const c = activeChart(); if (c.drawings.length) ask(`Delete all ${c.drawings.length} drawings on ${c.symbol}?`, {ok: "Delete all"}).then(y => { if (y) { S.drawings[c.key] = []; saveDrawings(); redrawAll(); } }); return; }
     setTool(S.tool === t ? "cursor" : t); });
   setTool("cursor");
   document.addEventListener("keydown", e => {
@@ -863,7 +871,18 @@ function showCtx(x, y, c, price, m) {
 }
 
 /* ============================================================ modals */
-function closeModals() { $$(".modal").forEach(m => m.classList.remove("show")); }
+function closeModals() { $$(".modal").forEach(m => m.classList.remove("show")); if (askResolve) { const r = askResolve; askResolve = null; r(null); } }
+let askResolve = null;
+// In-page replacement for prompt()/confirm(): resolves to the text (input mode), true (confirm), or null.
+function ask(title, {input = false, value = "", ok = "OK"} = {}) {
+  closeModals();
+  return new Promise(res => {
+    askResolve = res; $("#askTitle").firstChild.textContent = title; $("#askOk").textContent = ok;
+    const i = $("#askInput"); i.hidden = !input; i.value = value; $("#askModal").classList.add("show"); if (input) i.focus(); else $("#askOk").focus();
+  });
+}
+$("#askForm").addEventListener("submit", e => { e.preventDefault(); const r = askResolve; askResolve = null; $("#askModal").classList.remove("show");
+  if (r) r($("#askInput").hidden ? true : $("#askInput").value); });
 $$(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m || e.target.closest("[data-close]")) closeModals(); }));
 let symPick = null;
 function openSym(initial = "", onPick = null) {
@@ -918,9 +937,9 @@ function renderWatch() {
       <td><button class="x" data-rm="${s}" title="Remove">&times;</button></td></tr>`; }).join("")}</tbody></table>
     <div class="small muted" style="margin-top:6px">Click a row to chart it. Wave column: the wave in progress on the 1H chart at the current degree.</div>`;
   $("#wlSel").onchange = e => { S.list = e.target.value; store.set("list", S.list); renderWatch(); pollQuotes(); };
-  $("#wlNew").onclick = () => { const n = (prompt("New list name:") || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = []; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
-  $("#wlRen").onclick = () => { const n = (prompt("Rename list:", S.list) || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = S.lists[S.list]; delete S.lists[S.list]; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
-  $("#wlDel").onclick = () => { if (Object.keys(S.lists).length > 1 && confirm(`Delete list "${S.list}"?`)) { delete S.lists[S.list]; S.list = Object.keys(S.lists)[0]; store.set("lists", S.lists); store.set("list", S.list); renderWatch(); } };
+  $("#wlNew").onclick = async () => { const n = ((await ask("New watchlist name", {input: true, ok: "Create"})) || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = []; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
+  $("#wlRen").onclick = async () => { const n = ((await ask("Rename watchlist", {input: true, value: S.list, ok: "Rename"})) || "").trim().slice(0, 40); if (n && !S.lists[n]) { S.lists[n] = S.lists[S.list]; delete S.lists[S.list]; S.list = n; store.set("lists", S.lists); store.set("list", n); renderWatch(); } };
+  $("#wlDel").onclick = async () => { if (Object.keys(S.lists).length > 1 && await ask(`Delete watchlist "${S.list}"?`, {ok: "Delete"})) { delete S.lists[S.list]; S.list = Object.keys(S.lists)[0]; store.set("lists", S.lists); store.set("list", S.list); renderWatch(); } };
   $("#wlAdd").onclick = () => openSym("", addToList);
   box.querySelector("tbody").onclick = e => { const rm = e.target.closest("[data-rm]"); if (rm) { e.stopPropagation(); S.lists[S.list] = syms.filter(x => x !== rm.dataset.rm); store.set("lists", S.lists); renderWatch(); return; }
     const tr = e.target.closest("tr[data-s]"); if (tr) setSymbol(tr.dataset.s); };
@@ -989,7 +1008,7 @@ function openAlert(pre) {
     <input id="alPrice" type="number" step="any" value="${a.price}" style="width:130px"></div>
     <div class="row"><input id="alNote" placeholder="Note (optional)" style="flex:1" maxlength="120" value="${esc(a.note)}"></div>
     <div class="row"><label><input type="checkbox" id="alPopup" ${a.popup ? "checked" : ""}> Popup</label><label><input type="checkbox" id="alSound" ${a.sound ? "checked" : ""}> Sound</label>
-    <label><input type="checkbox" id="alSpeak" ${a.speak ? "checked" : ""}> Spoken</label><label><input type="checkbox" id="alNotify" ${a.notify ? "checked" : ""}> Desktop notification</label></div>
+    <label><input type="checkbox" id="alSpeak" ${a.speak ? "checked" : ""}> Spoken</label><label class="notify-opt"><input type="checkbox" id="alNotify" ${a.notify ? "checked" : ""}> Desktop notification</label></div>
     <div class="row"><label><input type="checkbox" id="alOnce" ${a.once ? "checked" : ""}> Only once (otherwise re-arms)</label></div>
     <div class="small muted" style="margin-bottom:8px">Alerts are checked in this browser tab while Wave Lab is open (every refresh). Wave alerts use the ${esc(S.degree)} degree.</div>
     <div class="row"><span class="spacer"></span><button data-close>Cancel</button><button class="on" id="alSave">Create alert</button></div>`;
@@ -998,7 +1017,7 @@ function openAlert(pre) {
     const v = {...a, interval: $("#alIv").value, type: $("#alType").value, price: parseFloat($("#alPrice").value), note: $("#alNote").value.slice(0, 120),
       popup: $("#alPopup").checked, sound: $("#alSound").checked, speak: $("#alSpeak").checked, notify: $("#alNotify").checked, once: $("#alOnce").checked,
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), active: true, created: Date.now(), degree: S.degree, state: null};
-    if (["above", "below"].includes(v.type) && !fin(v.price)) return alert("Enter a price");
+    if (["above", "below"].includes(v.type) && !fin(v.price)) { $("#alPrice").focus(); $("#alPrice").style.borderColor = "var(--bad)"; return; }
     if (v.notify && "Notification" in window && Notification.permission === "default") { try { await Notification.requestPermission(); } catch (e) {} }
     S.alerts.push(v); store.set("alerts", S.alerts); closeModals(); renderAlerts(); redrawAll(); checkAlerts();
   };
@@ -1108,6 +1127,7 @@ function startPolling(sec) {
 (async function init() {
   initHeader();
   try { S.meta = await api("/api/meta"); } catch (e) { setStatus("Server unreachable: " + e.message); return; }
+  if (S.meta.hosted) { $("#shotBtn").hidden = true; document.documentElement.classList.add("hosted"); }
   const b = $("#feedBadge"); b.textContent = S.meta.feed_label; b.className = "badge " + (S.meta.feed === "demo" ? "demo" : "live");
   if (S.meta.fallback_reason) b.title = "Pionex unreachable: " + S.meta.fallback_reason;
   try { S.symbols = (await api("/api/symbols")).symbols; } catch (e) { S.symbols = []; }

@@ -189,6 +189,11 @@ Features:
   changed. They can notify by popup, sound, spoken voice or desktop notification, and have a log.
   Alerts are checked while the page is open.
 
+**Hosted build.** `python3 tools/build_wavelab_standalone.py [OUT]` writes a single serverless page
+(default `var/wavelab-standalone.html`). It runs `wavelab/engine.js`, a browser port of the wave
+engine that a test keeps identical to `elliott.py`, on the labelled demo feed only, because a hosted
+page cannot reach the Pionex API. For live Pionex data, run the local server.
+
 Watchlists, drawings, alerts and settings are kept in the browser's local storage. The server binds
 to 127.0.0.1 only, rejects foreign `Host` headers, and accepts no writes.
 

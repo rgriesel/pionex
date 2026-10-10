@@ -163,6 +163,62 @@ class FeedTest(unittest.TestCase):
             fake.__exit__(None, None, None)
 
 
+class BrowserEngineParityTest(unittest.TestCase):
+    """wavelab/engine.js (hosted build) must count waves exactly like elliott.py."""
+
+    def test_js_engine_matches_python(self):
+        import shutil
+        import subprocess
+        from pionex_lab.util import PROJECT_ROOT
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        now = (T0 + 5 * 86_400_000 + 1_234_567) / 1000
+        feed, cases = DemoFeed(clock=lambda: now), []
+        for sym in ("BTC_USDT", "ETH_USDT", "DOGE_USDT"):
+            for iv in ("15M", "60M", "4H", "1D"):
+                b = feed.candles(sym, iv, 400)
+                for deg in ("minor", "intermediate", "primary"):
+                    a = ew.analyze(b["t"], b["o"], b["h"], b["l"], b["c"], degree=deg)
+                    cases.append({"sym": sym, "iv": iv, "deg": deg, "bars": b, "py": {
+                        "primary": a["primary"], "alternates": a["alternates"], "history": a["history"],
+                        "levels": a["levels"], "pivots": a["pivots"]}})
+        script = """
+global.window = {}; require(process.argv[1]);
+const E = window.WaveEngine, cases = JSON.parse(require('fs').readFileSync(0, 'utf8')), out = [];
+Date.now = () => %d;
+for (const c of cases) {
+  const b = c.bars, a = E.analyze(b.t, b.o, b.h, b.l, b.c, c.deg);
+  const jb = E.candles(c.sym, c.iv, b.c.length);
+  out.push({primary: a.primary, alternates: a.alternates, history: a.history, levels: a.levels, pivots: a.pivots,
+            closes: jb.c});
+}
+process.stdout.write(JSON.stringify(out));
+""" % int(now * 1000)
+        res = subprocess.run([node, "-e", script, str(PROJECT_ROOT / "wavelab" / "engine.js")],
+                             input=json.dumps(cases), capture_output=True, text=True, timeout=120)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        js = json.loads(res.stdout)
+
+        def close(x, y, path="") -> None:
+            if isinstance(x, dict):
+                self.assertEqual(set(x), set(y), path)
+                for k in x:
+                    close(x[k], y[k], f"{path}.{k}")
+            elif isinstance(x, list):
+                self.assertEqual(len(x), len(y), path)
+                for i, (a, b) in enumerate(zip(x, y)):
+                    close(a, b, f"{path}[{i}]")
+            elif isinstance(x, float) or isinstance(y, float):
+                self.assertAlmostEqual(float(x), float(y), delta=max(1e-9, abs(float(x)) * 1e-9), msg=path)
+            else:
+                self.assertEqual(x, y, path)
+        for c, j in zip(cases, js):
+            for k in ("primary", "alternates", "history", "levels", "pivots"):
+                close(c["py"][k], j[k], f"{c['sym']} {c['iv']} {c['deg']} {k}")
+            close(c["bars"]["c"], j["closes"], f"{c['sym']} {c['iv']} demo closes")
+
+
 class ServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

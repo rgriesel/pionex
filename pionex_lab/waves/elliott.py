@@ -82,6 +82,12 @@ def auto_threshold(h, l, c, degree: str = "intermediate", lookback: int = 200) -
     return min(0.5, max(0.002, med * mult))
 
 
+def _round(x: float, nd: int) -> float:
+    """Round half up, identically to wavelab/engine.js (Python's round() is half-even)."""
+    k = 10 ** nd
+    return math.floor(x * k + 0.5) / k
+
+
 def _band(x: float, lo: float, hi: float) -> float:
     """1 inside [lo, hi], decaying with log-distance outside it."""
     if x <= 0 or not math.isfinite(x):
@@ -150,7 +156,7 @@ def check_correction(prices, down: bool):
 def _score(rules, guides) -> float:
     if not all(ok for _, ok in rules) or not guides:
         return 0.0
-    return round(100.0 * sum(v for _, v in guides) / len(guides), 1)
+    return _round(100.0 * sum(v for _, v in guides) / len(guides), 1)
 
 
 def _levels(base: float, length: float, ratios, sign: float, kind: str, ref: str):
@@ -257,8 +263,8 @@ def _count_json(cand, t, current_price):
         "waves": [{"label": lab, "i": p.i, "t": t[p.i], "price": p.price, "confirmed": p.confirmed}
                   for lab, p in zip(labels, seg)],
         "rules": [{"text": tx, "ok": bool(ok)} for tx, ok in rules],
-        "guidelines": [{"text": tx, "fit": round(v, 2)} for tx, v in guides],
-        "score": round(score * weight, 1),
+        "guidelines": [{"text": tx, "fit": _round(v, 2)} for tx, v in guides],
+        "score": _round(score * weight, 1),
         "targets": targets,
         "invalidation": invalid,
         "invalidated": bool(broken),
@@ -346,7 +352,7 @@ def analyze(t, o, h, l, c, degree: str = "intermediate", pct: float | None = Non
             cj["move"] = "down" if cj["trend"] == "up" else "up"
             cj["targets"], cj["invalidation"], cj["invalidated"] = _post_targets(cj), None, False
             cj["channels"] = []
-            cj["score"] = round(cj["score"] * 0.97, 1)
+            cj["score"] = _round(cj["score"] * 0.97, 1)
             counts.append(cj)
     valid = [x for x in counts if not x["invalidated"]]
     valid.sort(key=lambda x: -x["score"])
@@ -418,5 +424,5 @@ def scan_summary(symbol: str, interval: str, analysis: dict, last: float) -> dic
     if ahead:
         row["next_target"] = min(ahead, key=lambda v: abs(v - last))
     if p["invalidation"]:
-        row["risk_pct"] = round(abs(last - p["invalidation"]) / last * 100.0, 2)
+        row["risk_pct"] = _round(abs(last - p["invalidation"]) / last * 100.0, 2)
     return row

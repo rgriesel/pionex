@@ -186,7 +186,7 @@ def cmd_fetch_proxy(args, paths, cfg, mandate):
     it tracks Pionex. Public archive files only; no account or key."""
     from datetime import datetime, timezone
     from urllib.error import URLError
-    from .data.proxy import VENUE, ProxyDataError, fetch, tracking_check
+    from .data.proxy import DEFAULT_MONTHS, VENUE, ProxyDataError, fetch, tracking_check
     from .data.store import MarketStore, MarketView
     paths.ensure()
     store = MarketStore(paths.proxy_market)
@@ -196,7 +196,7 @@ def cmd_fetch_proxy(args, paths, cfg, mandate):
     try:
         for s in cfg["research_universe"]:
             for iv in ("5M", "60M"):
-                print(json.dumps(fetch(store, s, iv, args.months, today, now)))
+                print(json.dumps(fetch(store, s, iv, args.months or DEFAULT_MONTHS, today, now)))
     except (ProxyDataError, URLError, OSError) as exc:
         print(f"FETCH FAILED: {exc}. Existing proxy history is kept.")
         return 3
@@ -235,10 +235,15 @@ def _universe_bars(paths, cfg, timeframe="5m", source="pionex"):
     mv = MarketView(paths.market)
     src = mv if source == "pionex" else MarketView(paths.proxy_market)
     funding_conn = MarketView(paths.proxy_market).conn if paths.proxy_market.exists() else None
+    start = None
+    if source == "proxy":   # the documented proxy research window (see proxy.DEFAULT_MONTHS)
+        from datetime import datetime, timezone
+        from .data.proxy import window_start_ms
+        start = window_start_ms(datetime.now(timezone.utc).date())
     out = {}
     for s in cfg["research_universe"]:
-        b = src.bars(s, base)
-        ctx = resample(b, context) if context == "4H" else src.bars(s, context)
+        b = src.bars(s, base, start_ms=start)
+        ctx = resample(b, context) if context == "4H" else src.bars(s, context, start_ms=start)
         if funding_conn is not None:  # labelled proxy-venue funding, read only by funding hypotheses
             from .data.proxy import funding_series
             b.funding = funding_series(funding_conn, s)
@@ -624,7 +629,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
-    p.add_argument("--months", type=int, default=48)   # ~4 years of 5m proxy history: several regimes, ~4x OOS trades
+    p.add_argument("--months", type=int, default=None, help="full months of history (default: proxy.DEFAULT_MONTHS)")
     p = sub.add_parser("paper", help="run the paper engine")
     p.add_argument("--pionex-cli", help="path to pionex-trade-cli for dry-run previews (default: auto)")
     p = sub.add_parser("serve", help="serve the read-only dashboard")

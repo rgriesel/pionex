@@ -402,16 +402,17 @@ def research_timeframe_for(day: str) -> str:
 
 def due_daily_jobs(state: dict, now_ms: int) -> list:
     """Daily automation for the supervisor: reconcile/attribute yesterday, then one research cycle.
-    5-minute cycles run on the refreshed, labelled proxy-venue history: Pionex's own ~35 days of
-    5-minute bars can never meet the 60-day out-of-sample gate. Hourly cycles use Pionex data."""
+    Cycles run on the refreshed, labelled proxy-venue history: Pionex's own ~35 days of 5-minute
+    bars can never meet the 60-day out-of-sample gate, and its ~417 days of hourly bars give rare
+    hourly hypotheses too few trades."""
     day = utc_day(now_ms)
     if state.get("day") == day or (now_ms % 86_400_000) // 60_000 < DAILY_JOB_MINUTE:
         return []
     tf = research_timeframe_for(day)
-    research = ["research", "--timeframe", tf, "--note", "automatic daily cycle"]
-    if tf == "5m":
-        return [["daily-review"], ["fetch-proxy"], research + ["--data", "proxy"]]
-    return [["daily-review"], research]
+    research = ["research", "--timeframe", tf, "--note", "automatic daily cycle", "--data", "proxy"]
+    # Both timeframes research on the refreshed, labelled proxy history (42 months; Pionex serves
+    # ~35 days of 5m and ~417 days of 1h). The tracking check against Pionex's own bars still gates it.
+    return [["daily-review"], ["fetch-proxy"], research]
 
 
 def cmd_run(args, paths, cfg, mandate):

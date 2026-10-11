@@ -90,6 +90,22 @@ def _ms(d: date) -> int:
     return (d.toordinal() - date(1970, 1, 1).toordinal()) * 86_400_000
 
 
+# Research window: this many full months before the current month. 42 months starts on or after
+# 2023-04-01 until 2026-10, i.e. after the 2023-03-24 Binance spot trading halt (a real 16-bar gap
+# that the data-quality gate would rightly reject; gaps are never filled with invented bars).
+DEFAULT_MONTHS = 42
+
+
+def window_start(today: date, months: int) -> date:
+    """First day of the month `months` full months before `today`'s month."""
+    y, m = divmod(today.year * 12 + today.month - 1 - months, 12)
+    return date(y, m + 1, 1)
+
+
+def window_start_ms(today: date, months: int = DEFAULT_MONTHS) -> int:
+    return _ms(window_start(today, months))
+
+
 def fetch(store, symbol: str, interval: str, months: int, today: date, now_ms: int, get=http_get) -> dict:
     """Fill `store` with `months` full months before `today` plus this month's completed days.
     Periods already complete in the store are skipped, so the daily refresh fetches one file."""

@@ -79,6 +79,13 @@ class Fetch(unittest.TestCase):
         self.assertEqual(len(self.store.bars("BTC_USDT", "5M")), 0)
 
 
+class Window(unittest.TestCase):
+    def test_research_window_starts_after_the_2023_halt(self):
+        self.assertEqual(proxy.window_start(date(2026, 10, 11), 42), date(2023, 4, 1))
+        self.assertEqual(proxy.window_start(date(2026, 1, 31), 1), date(2025, 12, 1))   # crosses a year
+        self.assertGreaterEqual(proxy.window_start(date(2026, 10, 11), proxy.DEFAULT_MONTHS), date(2023, 3, 25))
+
+
 class Tracking(unittest.TestCase):
     def test_close_proxy_passes_and_divergent_proxy_fails(self):
         closes = random_walk(3000, 100.0, 0.002, seed=4)

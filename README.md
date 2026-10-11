@@ -111,8 +111,9 @@ What happens on first start:
    difference <= 5 bps, 5-minute return correlation >= 0.95); the cycle records the venue and the
    tracking evidence, and the dashboard names the venue. Costs stay Pionex fees and observed
    Pionex spreads, and a qualified candidate must still pass its paper trial on Pionex quotes.
-   The daily automation alternates: 5-minute days refresh the proxy and research on it; hourly
-   days research on Pionex's own hourly history.
+   The daily automation alternates 5-minute and hourly days. Since 2026-10-11 both refresh the
+   proxy and research on it, because Pionex's ~417 days of hourly bars gave rarely-firing hourly
+   hypotheses too few out-of-sample trades.
 
    A hypothesis REJECTED in two cycles is retired from research (re-testing a frozen grid adds no
    information) but stays in the paper engine's shadow book. New hypotheses are pre-registered in

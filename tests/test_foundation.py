@@ -224,8 +224,8 @@ class DailyAutomation(unittest.TestCase):
         by_tf = {j[-1][2]: j for j in (jobs, due_daily_jobs({}, late + 86_400_000))}
         self.assertEqual(by_tf["5m"][1], ["fetch-proxy"])             # 5m days refresh, then use the proxy
         self.assertEqual(by_tf["5m"][-1][-2:], ["--data", "proxy"])
-        self.assertEqual(len(by_tf["1h"]), 2)
-        self.assertNotIn("--data", by_tf["1h"][-1])                   # hourly stays on Pionex data
+        self.assertEqual(by_tf["1h"][1], ["fetch-proxy"])             # hourly days too, since 2026-10-11
+        self.assertEqual(by_tf["1h"][-1][-2:], ["--data", "proxy"])
 
     def test_research_timeframe_alternates(self):
         from pionex_lab.cli import research_timeframe_for

@@ -362,6 +362,13 @@ def cmd_waves(args, paths, cfg, mandate):
     from .waves.feeds import pick_feed
     from .waves.server import serve
     _setup_logging(paths, "wavelab", args.verbose)
+    url = f"http://{args.host}:{args.port}/"
+    if args.port and _wavelab_running(url):  # e.g. the desktop shortcut clicked twice
+        print(f"Wave Lab is already running on {url}", flush=True)
+        if args.open:
+            import webbrowser
+            webbrowser.open(url)
+        return 0
     feed = pick_feed(args.feed, market_path=paths.market,
                      client=_client(cfg) if args.feed in ("auto", "pionex") else None)
 
@@ -374,6 +381,16 @@ def cmd_waves(args, paths, cfg, mandate):
             webbrowser.open(url)
     serve(feed, host=args.host, port=args.port, ready=ready)
     return 0
+
+
+def _wavelab_running(url: str) -> bool:
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # loopback: never via a proxy
+    try:
+        with opener.open(url + "api/meta", timeout=2) as resp:
+            return "feed_label" in json.loads(resp.read(65536).decode("utf-8"))
+    except (OSError, ValueError):
+        return False
 
 
 MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}

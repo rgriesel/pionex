@@ -163,6 +163,38 @@ class FeedTest(unittest.TestCase):
             fake.__exit__(None, None, None)
 
 
+class ZoneTest(unittest.TestCase):
+    """Projected end zone (the target box) of the wave in progress."""
+
+    def test_c_wave_zone_spans_targets_and_fibonacci_time(self):
+        P, H = ew.Pivot, 3_600_000
+        t = [T0 + k * H for k in range(40)]
+        seg = [P(0, 100.0, "H", True), P(10, 90.0, "L", True), P(15, 95.0, "H", True), P(18, 89.0, "L", False)]
+        targets = [{"price": 88.82}, {"price": 85.0}, {"price": 78.82}]
+        z = ew._zone(("0", "A", "B", "C"), seg, t, targets)
+        self.assertEqual((z["price_lo"], z["price_hi"], z["wave"], z["time_ref"]), (78.82, 88.82, "C", "A"))
+        self.assertAlmostEqual(z["t_from"], t[15] + 0.618 * 10 * H)       # from the start of C (end of B)
+        self.assertAlmostEqual(z["t_to"], t[15] + 1.618 * 10 * H)          # wave A lasted 10 bars
+
+    def test_wave4_uses_wave2_duration_and_no_zone_without_targets(self):
+        P, H = ew.Pivot, 3_600_000
+        t = [T0 + k * H for k in range(60)]
+        seg = [P(0, 100.0, "L", True), P(5, 110.0, "H", True), P(9, 104.0, "L", True), P(20, 130.0, "H", True),
+               P(24, 122.0, "L", False)]
+        z = ew._zone(("0", "1", "2", "3", "4"), seg, t, [{"price": 124.0}, {"price": 117.0}])
+        self.assertEqual(z["time_ref"], "2")
+        self.assertAlmostEqual(z["t_to"] - t[20], 1.618 * 4 * H)
+        self.assertIsNone(ew._zone(("0", "1", "2", "3", "4"), seg, t, []))
+        self.assertIsNone(ew._zone(("0", "1"), seg[:2], t, [{"price": 1.0}]))
+
+    def test_analysis_counts_carry_a_zone_key(self):
+        b = DemoFeed().candles("BTC_USDT", "60M", 400)
+        a = ew.analyze(b["t"], b["o"], b["h"], b["l"], b["c"])
+        for c in [a["primary"], *a["alternates"]]:
+            if c:
+                self.assertIn("zone", c)
+
+
 class BrowserEngineParityTest(unittest.TestCase):
     """wavelab/engine.js (hosted build) must count waves exactly like elliott.py."""
 

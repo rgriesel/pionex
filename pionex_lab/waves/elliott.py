@@ -196,6 +196,28 @@ def _targets(kind: str, labels, prices, up: bool):
     return [], None, ""
 
 
+# Time reference for the wave in progress: the wave whose duration the current one is compared with.
+ZONE_REF = {"2": "1", "3": "1", "4": "2", "5": "1", "B": "A", "C": "A"}
+ZONE_TIME = (0.618, 1.618)
+
+
+def _zone(labels, seg, t, targets):
+    """Projected end zone of the wave in progress: a price band spanning its Fibonacci targets and a
+    time window of 0.618-1.618x the reference wave's duration, from the start of the current wave."""
+    last = labels[-1]
+    ref = ZONE_REF.get(last)
+    if not targets or ref is None or ref not in labels:
+        return None
+    j = labels.index(ref)
+    if j < 1:
+        return None
+    dur = t[seg[j].i] - t[seg[j - 1].i]
+    start = t[seg[-2].i]
+    prices = [x["price"] for x in targets]
+    return {"price_lo": min(prices), "price_hi": max(prices), "t_from": start + ZONE_TIME[0] * dur,
+            "t_to": start + ZONE_TIME[1] * dur, "wave": last, "time_ref": ref}
+
+
 def _channels(kind: str, pts):
     """Elliott channels as point pairs (index, price): a base line and its parallel."""
     out = []
@@ -266,6 +288,7 @@ def _count_json(cand, t, current_price):
         "guidelines": [{"text": tx, "fit": _round(v, 2)} for tx, v in guides],
         "score": _round(score * weight, 1),
         "targets": targets,
+        "zone": _zone(labels, seg, t, targets),
         "invalidation": invalid,
         "invalidated": bool(broken),
         "channels": [{"name": ch["name"],
@@ -351,6 +374,7 @@ def analyze(t, o, h, l, c, degree: str = "intermediate", pct: float | None = Non
             cj["current_wave"] = "A" if done5 else "1"
             cj["move"] = "down" if cj["trend"] == "up" else "up"
             cj["targets"], cj["invalidation"], cj["invalidated"] = _post_targets(cj), None, False
+            cj["zone"] = None
             cj["channels"] = []
             cj["score"] = _round(cj["score"] * 0.97, 1)
             counts.append(cj)

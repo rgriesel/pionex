@@ -624,7 +624,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
-    p.add_argument("--months", type=int, default=12)
+    p.add_argument("--months", type=int, default=48)   # ~4 years of 5m proxy history: several regimes, ~4x OOS trades
     p = sub.add_parser("paper", help="run the paper engine")
     p.add_argument("--pionex-cli", help="path to pionex-trade-cli for dry-run previews (default: auto)")
     p = sub.add_parser("serve", help="serve the read-only dashboard")

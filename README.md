@@ -102,7 +102,9 @@ What happens on first start:
    Because ~35 days of Pionex 5-minute candles can never meet the 60-day out-of-sample gate,
    5-minute research runs on openly labelled **proxy-venue** history: `fetch-proxy` downloads
    Binance's public, checksummed kline archives (no account or key) into a separate
-   `var/proxy_market.db`, never into Pionex's store. `research --data proxy` refuses the proxy
+   `var/proxy_market.db`, never into Pionex's store. It keeps 48 months by default (since
+   2026-10-11; previously 12), so 5-minute walk-forward tests span several market regimes and
+   rarely-firing hypotheses get enough out-of-sample trades. `research --data proxy` refuses the proxy
    (without spending the day's budget) unless it tracks Pionex's own bars closely (median close
    difference <= 5 bps, 5-minute return correlation >= 0.95); the cycle records the venue and the
    tracking evidence, and the dashboard names the venue. Costs stay Pionex fees and observed

@@ -144,6 +144,15 @@
     }
     return [[], null, ""];
   }
+  const ZONE_REF = {"2": "1", "3": "1", "4": "2", "5": "1", "B": "A", "C": "A"}, ZONE_TIME = [0.618, 1.618];
+  function zone(labels, seg, t, tg) {  // mirror of elliott._zone
+    const last = labels[labels.length - 1], ref = ZONE_REF[last];
+    if (!tg.length || ref == null || !labels.includes(ref)) return null;
+    const j = labels.indexOf(ref); if (j < 1) return null;
+    const dur = t[seg[j].i] - t[seg[j - 1].i], start = t[seg[seg.length - 2].i], prices = tg.map(x => x.price);
+    return {price_lo: Math.min(...prices), price_hi: Math.max(...prices), t_from: start + ZONE_TIME[0] * dur,
+            t_to: start + ZONE_TIME[1] * dur, wave: last, time_ref: ref};
+  }
   function channels(kind, pts) {
     const out = [], par = (a, b, th, name) => { const sl = b[0] !== a[0] ? (b[1] - a[1]) / (b[0] - a[0]) : 0; out.push({name, base: [a, b], parallel: [th, [th[0] + (b[0] - a[0]), th[1] + sl * (b[0] - a[0])]]}); };
     if (kind === "impulse") { if (pts.length === 4) par(pts[0], pts[2], pts[1], "0-2 channel"); else if (pts.length >= 5) par(pts[2], pts[4], pts[3], "2-4 channel"); }
@@ -168,7 +177,7 @@
       complete: seg.length === labels.length && ["5", "C"].includes(last) && seg[seg.length - 1].confirmed, current_wave: last, status,
       waves: labels.map((lab, k) => ({label: lab, i: seg[k].i, t: t[seg[k].i], price: seg[k].price, confirmed: seg[k].confirmed})),
       rules: rules.map(([text, ok]) => ({text, ok: !!ok})), guidelines: guides.map(([text, v]) => ({text, fit: Math.floor(v * 100 + 0.5) / 100})),
-      score: round1(sc * weight), targets: tg, invalidation: inv, invalidated: inv != null && (up ? cur < inv : cur > inv),
+      score: round1(sc * weight), targets: tg, zone: zone(labels, seg, t, tg), invalidation: inv, invalidated: inv != null && (up ? cur < inv : cur > inv),
       channels: channels(kind, seg.map(p => [p.i, p.price])).map(ch => ({name: ch.name, base: ch.base.map(a => ({t: t[a[0]], i: a[0], price: a[1]})), parallel: ch.parallel.map(a => ({i: a[0], price: a[1]}))})),
     };
   }
@@ -210,7 +219,7 @@
       const cj = countJson(cd, t, last), done5 = cd.kind === "impulse";
       cj.status = done5 ? "Five waves complete; the latest swing may be wave A of a correction" : "A-B-C complete; the latest swing may start a new trend";
       cj.current_wave = done5 ? "A" : "1"; cj.move = cj.trend === "up" ? "down" : "up";
-      cj.targets = postTargets(cj); cj.invalidation = null; cj.invalidated = false; cj.channels = []; cj.score = round1(cj.score * 0.97);
+      cj.targets = postTargets(cj); cj.zone = null; cj.invalidation = null; cj.invalidated = false; cj.channels = []; cj.score = round1(cj.score * 0.97);
       counts.push(cj);
     }
     const valid = counts.filter(x => !x.invalidated).sort((a, b) => b.score - a.score), seen = new Set(), ranked = [];

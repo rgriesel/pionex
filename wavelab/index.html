@@ -111,6 +111,7 @@ footer{display:flex;gap:12px;padding:3px 10px;font-size:11px;color:var(--muted);
       <label><input type="checkbox" data-w="alternates"> Alternate counts</label>
       <label><input type="checkbox" data-w="history"> Earlier completed patterns</label>
       <label><input type="checkbox" data-w="targets"> Fibonacci targets &amp; invalidation</label>
+      <label><input type="checkbox" data-w="box"> Target box (projected end zone: price &amp; time)</label>
       <label><input type="checkbox" data-w="fibs"> Smart Fibs (hover a wave label)</label>
       <label><input type="checkbox" data-w="channels"> Elliott channels</label>
       <label><input type="checkbox" data-w="levels"> Smart support / resistance</label>
@@ -294,7 +295,7 @@ const INDICATORS = {
 };
 
 /* ============================================================ state */
-const DEFAULT_WAVE = {waves: true, alternates: false, history: true, targets: true, fibs: true, channels: true, levels: false, pivots: false};
+const DEFAULT_WAVE = {waves: true, alternates: false, history: true, targets: true, box: true, fibs: true, channels: true, levels: false, pivots: false};
 const S = {
   meta: null, symbols: [],
   symbol: store.get("symbol", "BTC_USDT"),
@@ -578,7 +579,20 @@ class Chart {
       for (const t of prim.targets) this.hline(g, D, t.price, C.target, `${t.kind === "retracement" ? "R" : "T"} ${(t.ratio*100).toFixed(1)}% ${t.ref} = ${fmtP(t.price)}`, [2, 3], x0);
       if (fin(prim.invalidation)) this.hline(g, D, prim.invalidation, C.bad, `Invalidation ${fmtP(prim.invalidation)}`, [8, 4], this.x(prim.waves[0].i));
     }
+    if (S.wave.box && prim.zone) this.drawZone(g, D, prim.zone);
     if (S.wave.fibs && this.hoverWave) this.drawSmartFib(g, D, this.hoverWave.count, this.hoverWave.k);
+  }
+  drawZone(g, D, z) {
+    // Projected end zone of the wave in progress: Fibonacci target band x 0.618-1.618 time window.
+    const C = this.C, d = this.data, xa = this.x(this.idxOfT(z.t_from)), xb = this.x(this.idxOfT(z.t_to));
+    const ya = this.y(z.price_hi), yb = this.y(z.price_lo), top = Math.min(ya, yb), h = Math.max(2, Math.abs(yb - ya)), w = Math.max(2, xb - xa);
+    const passed = d.n && z.t_to < d.t[d.n - 1];
+    g.save(); g.globalAlpha = passed ? 0.07 : 0.15; g.fillStyle = C.target; g.fillRect(xa, top, w, h);
+    g.globalAlpha = passed ? 0.5 : 0.95; g.strokeStyle = C.target; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(xa, top, w, h); g.setLineDash([]);
+    g.fillStyle = C.target; g.font = "600 10px system-ui"; g.textAlign = "left";
+    g.textBaseline = "bottom"; g.fillText(`Wave ${z.wave} end zone ${fmtP(z.price_lo)} - ${fmtP(z.price_hi)}${passed ? " (time window passed)" : ""}`, xa + 3, top - 3);
+    g.textBaseline = "top"; g.fillText(`${fmtTime(z.t_from, this.interval, true)} -> ${fmtTime(z.t_to, this.interval, true)}`, xa + 3, top + h + 3);
+    g.restore();
   }
   drawCount(g, c, color, main, alpha, dash) {
     const ws = c.waves; g.save(); g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = main ? 1.8 : 1.1; g.setLineDash(dash || []);
@@ -1095,6 +1109,7 @@ function renderCount() {
     ${k === shown ? `<h4>Rules</h4>${p.rules.map(r => `<div class="${r.ok ? "ok" : "no"} small">${esc(r.text)}</div>`).join("")}
     <h4>Guidelines</h4>${p.guidelines.map(g => `<div class="small">${esc(g.text)} <span class="muted">${Math.round(g.fit*100)}%</span><div class="bar"><i style="width:${g.fit*100}%"></i></div></div>`).join("")}
     <h4>Targets for the wave in progress</h4>${p.targets.map(t => `<div class="small">${t.kind === "retracement" ? "Retrace" : "Extend"} ${(t.ratio*100).toFixed(1)}% of ${esc(t.ref)}: <b>${fmtP(t.price)}</b></div>`).join("") || '<div class="small muted">None</div>'}
+    ${p.zone ? `<div class="small" style="margin-top:4px">Projected end of wave ${esc(p.zone.wave)}: <b>${fmtP(p.zone.price_lo)} - ${fmtP(p.zone.price_hi)}</b> between ${fmtTime(p.zone.t_from, c.interval, true)} and ${fmtTime(p.zone.t_to, c.interval, true)} <span class="muted">(Fibonacci targets; 0.618-1.618x the duration of wave ${esc(p.zone.time_ref)}). A zone to watch, not a confirmed end.</span></div>` : ""}
     ${fin(p.invalidation) ? `<div class="small" style="margin-top:4px;color:var(--bad)">Invalidation: ${fmtP(p.invalidation)}</div>` : ""}` : ""}</div>`;
   box.innerHTML = `<div class="small muted" style="margin-bottom:6px">${esc(c.symbol)} · ${IV_LABEL[c.interval]} · ${esc(an.degree)} degree · swing threshold ${fin(an.threshold) ? (an.threshold*100).toFixed(2) + "%" : "–"} · ${an.pivots.length} pivots</div>
     ${counts.length ? counts.map(card).join("") : '<div class="card">No count satisfies the Elliott rules at this degree. Try another degree or timeframe.</div>'}

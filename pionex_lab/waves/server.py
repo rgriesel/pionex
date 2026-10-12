@@ -11,6 +11,8 @@ import ipaddress
 import json
 import logging
 import math
+import threading
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +21,7 @@ from ..exchange.pionex_public import KLINE_INTERVALS
 from ..util import PROJECT_ROOT
 from .elliott import DEGREES, analyze, scan_summary, wave_oscillator
 from .feeds import MAX_BARS, validate
+from .heatmap import RANGES, HeatmapError, heatmap as liq_heatmap
 
 log = logging.getLogger("pionex_lab.waves")
 PAGE = PROJECT_ROOT / "wavelab" / "index.html"
@@ -39,8 +42,10 @@ def _clean(x):
 
 
 class WaveApi:
-    def __init__(self, feed):
+    def __init__(self, feed, heat_source=None):
         self.feed = feed
+        self.heat_source = heat_source          # injectable for tests; default: Binance public API
+        self._heat, self._heat_lock = {}, threading.Lock()
 
     def meta(self):
         return {"feed": self.feed.name, "feed_label": self.feed.label,
@@ -81,6 +86,25 @@ class WaveApi:
                 return sym, {"error": str(exc)[:120]}
         with ThreadPoolExecutor(4) as ex:
             return {"feed": self.feed.name, "quotes": dict(ex.map(one, symbols))}
+
+    def heatmap(self, symbol, rng, model, lev):
+        """Estimated liquidation heatmap (waves/heatmap.py), cached for 60 s per parameter set."""
+        key = (symbol, rng, model, lev)
+        now = time.time()
+        with self._heat_lock:
+            hit = self._heat.get(key)
+            if hit and now - hit[0] < 60:
+                return hit[1]
+        try:
+            kw = {"get": self.heat_source} if self.heat_source else {}
+            out = {"available": True, **liq_heatmap(symbol, rng, model, lev, **kw)}
+        except HeatmapError as exc:
+            out = {"available": False, "symbol": symbol, "note": str(exc)}
+        with self._heat_lock:
+            self._heat[key] = (now, out)
+            if len(self._heat) > 64:
+                self._heat.pop(next(iter(self._heat)))
+        return out
 
     def scan(self, symbols, intervals, degree):
         jobs = [(s, iv) for s in symbols for iv in intervals][:MAX_SCAN]
@@ -150,6 +174,13 @@ def make_handler(api: WaveApi, allowed_hosts: set):
                     pct = arg("pct")
                     return self._json(200, api.analysis(sym, iv, arg("degree", "intermediate"), limit,
                                                         float(pct) if pct else None, arg("bars") == "1"))
+                if url.path == "/api/heatmap":
+                    sym = (arg("symbol") or "").upper()
+                    validate(sym, "60M")
+                    rng, lev = arg("range", "24h"), arg("lev", "all")
+                    if rng not in RANGES:
+                        raise ValueError(f"range must be one of {list(RANGES)}")
+                    return self._json(200, api.heatmap(sym, rng, int(arg("model", "1")), lev))
                 if url.path == "/api/quotes":
                     syms = _csv(q, "symbols")
                     for s in syms:

@@ -194,6 +194,20 @@ function fmtTime(t, iv, full) {
   if (full) return `${d.getFullYear()} ${day} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   return IV_MS[iv] >= 864e5 ? day : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+const HEAT = {};   // liquidation heatmap cache: key -> {at, loading, data}
+function loadHeat(key, symbol, p) {
+  const prev = HEAT[key]; HEAT[key] = {at: Date.now(), loading: true, data: prev && prev.data};
+  api(`/api/heatmap?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(p.range)}&model=${encodeURIComponent(p.model)}&lev=${encodeURIComponent(p.lev)}`)
+    .then(d => { HEAT[key] = {at: Date.now(), data: d}; redrawAll(); })
+    .catch(e => { HEAT[key] = {at: Date.now(), data: {available: false, note: String(e.message || e)}}; redrawAll(); });
+}
+const HEAT_STOPS = [[0, [59, 15, 112]], [0.45, [33, 145, 140]], [0.75, [94, 201, 98]], [1, [253, 231, 37]]];
+function heatColor(t) {
+  for (let k = 1; k < HEAT_STOPS.length; k++) { const [t1, c1] = HEAT_STOPS[k], [t0, c0] = HEAT_STOPS[k - 1];
+    if (t <= t1) { const f = (t - t0) / (t1 - t0); return `rgb(${c0.map((v, j) => Math.round(v + (c1[j] - v) * f)).join(",")})`; } }
+  return "rgb(253,231,37)";
+}
+const fmtUsd = v => !fin(v) ? "-" : v >= 1e9 ? "$" + (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? "$" + (v / 1e3).toFixed(0) + "K" : "$" + Math.round(v);
 async function api(path) {
   if (window.WaveEngine) return window.WaveEngine.route(path);  // hosted build: no server
   const r = await fetch(path, {cache: "no-store"});
@@ -223,6 +237,13 @@ const TA = {
 };
 const L = (v, color, width = 1.3, dash) => ({v, color, width, dash});
 const INDICATORS = {
+  liqmap: {name: "Liquidation heatmap (estimated)", overlay: true, heat: true,
+    params: {range: "24h", model: 1, side: "both", lev: "all", hide: 10, intensity: 1, opacity: 0.7},
+    options: {range: [["12h", "12 hours"], ["24h", "24 hours"], ["3d", "3 days"], ["1w", "1 week"], ["2w", "2 weeks"], ["1M", "1 month"]],
+              model: [[1, "Model 1: equal leverage mix"], [2, "Model 2: mostly lower leverage"], [3, "Model 3: mostly high leverage"]],
+              side: [["both", "Longs + shorts"], ["long", "Long liquidations (below price)"], ["short", "Short liquidations (above price)"]],
+              lev: [["all", "All leverage"], ["10", "10x"], ["25", "25x"], ["50", "50x"], ["100", "100x"]]},
+    calc: () => ({heat: true})},
   sma: {name: "Simple moving average", overlay: true, params: {length: 20}, calc: (d, p) => ({lines: [L(TA.sma(d.c, p.length), "#ffca28")]})},
   ema: {name: "Exponential moving average", overlay: true, params: {length: 50}, calc: (d, p) => ({lines: [L(TA.ema(d.c, p.length), "#29b6f6")]})},
   wma: {name: "Weighted moving average", overlay: true, params: {length: 20}, calc: (d, p) => ({lines: [L(TA.wma(d.c, p.length), "#ab47bc")]})},
@@ -446,10 +467,12 @@ class Chart {
     // main clip
     g.save(); g.beginPath(); g.rect(0, 0, D.pw, D.mainH); g.clip();
     this.drawGrid(g, D);
+    this.heat = null;
+    S.indicators.forEach(x => { if (x.type === "liqmap") this.drawHeat(g, D, Object.assign({}, INDICATORS.liqmap.params, x.params)); });
     const volIdx = S.indicators.findIndex(x => x.type === "volume");
     if (volIdx >= 0) this.drawVolume(g, D, i0, i1, S.indicators[volIdx].params);
     if (S.wave.levels && this.an) this.drawLevels(g, D);
-    S.indicators.forEach((x, k) => { const def = INDICATORS[x.type]; if (def && def.overlay && inds[k]) this.drawOverlay(g, inds[k], i0, i1 + 60); });
+    S.indicators.forEach((x, k) => { const def = INDICATORS[x.type]; if (def && def.overlay && !def.heat && inds[k]) this.drawOverlay(g, inds[k], i0, i1 + 60); });
     this.drawSeries(g, D, d, i0, i1);
     if (this.an) this.drawWaves(g, D);
     this.drawAlertLines(g, D);
@@ -581,6 +604,40 @@ class Chart {
     }
     if (S.wave.box && prim.zone) this.drawZone(g, D, prim.zone);
     if (S.wave.fibs && this.hoverWave) this.drawSmartFib(g, D, this.hoverWave.count, this.hoverWave.k);
+  }
+  drawHeat(g, D, p) {
+    // Estimated liquidation heatmap (server: /api/heatmap, Binance OI model) behind the candles.
+    const key = `${this.symbol}|${p.range}|${p.model}|${p.lev}`, hit = HEAT[key];
+    if (!hit || (!hit.loading && Date.now() - hit.at > 60000)) loadHeat(key, this.symbol, p);
+    const h = hit && hit.data, C = this.C;
+    if (!h || !h.available) { g.save(); g.fillStyle = C.muted; g.font = "11px system-ui"; g.textAlign = "left"; g.textBaseline = "top";
+      g.fillText(h ? `Liquidation heatmap unavailable: ${h.note || h.error || ""}` : "Loading liquidation heatmap...", 8, D.mainH - 18); g.restore(); return; }
+    const val = c => p.side === "long" ? c[1] : p.side === "short" ? c[2] : c[1] + c[2];
+    const mx = p.side === "long" ? h.max_long : p.side === "short" ? h.max_short : h.max_both;
+    if (!(mx > 0)) return;
+    const cut = mx * Math.min(0.95, Math.max(0, p.hide / 100)), scale = mx / Math.max(0.1, p.intensity), lo = h.bins.lo, bw = h.bins.width;
+    this.heat = {h, p, val};
+    g.save(); g.globalAlpha = Math.max(0.05, Math.min(1, p.opacity));
+    for (const col of h.columns) {
+      const xa = this.x(this.idxOfT(col.t0)), xb = this.x(this.idxOfT(col.t1));
+      if (xb < 0 || xa > D.pw) continue;
+      const w = Math.max(1, xb - xa + 0.5);
+      for (const c of col.cells) {
+        const v = val(c); if (v <= cut) continue;
+        const ya = this.y(lo + (c[0] + 1) * bw), yb = this.y(lo + c[0] * bw);
+        if (yb < 0 || ya > D.mainH) continue;
+        g.fillStyle = heatColor(Math.min(1, v / scale)); g.fillRect(xa, ya, w, Math.max(1, yb - ya));
+      }
+    }
+    g.globalAlpha = 1;   // legend: colour scale and what it means
+    const lx = D.pw - 196, ly = 8, lw = 120, grad = g.createLinearGradient(lx, 0, lx + lw, 0);
+    for (const k of [0, 0.25, 0.5, 0.75, 1]) grad.addColorStop(k, heatColor(k));
+    g.fillStyle = C.bg; g.globalAlpha = 0.75; g.fillRect(lx - 6, ly - 4, lw + 76, 34); g.globalAlpha = 1;
+    g.fillStyle = grad; g.fillRect(lx, ly, lw, 8);
+    g.fillStyle = C.muted; g.font = "10px system-ui"; g.textAlign = "left"; g.textBaseline = "top";
+    g.fillText(`$0 - ${fmtUsd(scale)}+  est. liquidations`, lx, ly + 11);
+    g.fillText(`${p.range} · model ${p.model} · ${p.side} · ${p.lev === "all" ? "all lev." : p.lev + "x"}`, lx, ly + 21);
+    g.restore();
   }
   drawZone(g, D, z) {
     // Projected end zone of the wave in progress: Fibonacci target band x 0.618-1.618 time window.
@@ -714,6 +771,11 @@ class Chart {
     const r = this.data, ch = i ? (r.c[i] / r.c[i-1] - 1) * 100 : 0;
     let s = `O ${fmtP(r.o[i])}  H ${fmtP(r.h[i])}  L ${fmtP(r.l[i])}  C ${fmtP(r.c[i])}  ${fmtPct(ch)}  V ${fmtVol(r.v[i])}`;
     S.indicators.forEach((x, k) => { const def = INDICATORS[x.type]; if (!def || !def.overlay || !inds[k] || !inds[k].lines) return; const v = inds[k].lines[0].v[i]; if (fin(v)) s += `\n${def.name.split(" (")[0]}: ${fmtP(v, r.c[i])}`; });
+    if (this.heat && this.mouse && this.mouse.x < this._dims.pw && this.mouse.y < this._dims.mainH) {
+      const {h} = this.heat, t = this.tOfIdx(this.iAt(this.mouse.x)), pr = this.pAt(this.mouse.y), b = Math.floor((pr - h.bins.lo) / h.bins.width);
+      const col = h.columns.find(c2 => c2.t0 <= t && t < c2.t1), cell = col && col.cells.find(c2 => c2[0] === b);
+      if (col) s += `\nEst. liquidations near ${fmtP(pr)}: longs ${fmtUsd(cell ? cell[1] : 0)} · shorts ${fmtUsd(cell ? cell[2] : 0)}`;
+    }
     const p = this.an && this.an.primary; if (p && S.wave.waves) s += `\nWave ${p.current_wave} · ${p.type} · ${p.direction} · score ${p.score}`;
     this.el.querySelector(".legend").textContent = s;
   }
@@ -916,7 +978,9 @@ function openInd() { $("#indModal").classList.add("show"); $("#indQ").value = ""
 function renderInd() {
   const q = $("#indQ").value.toLowerCase();
   $("#indActive").innerHTML = S.indicators.map((x, k) => { const def = INDICATORS[x.type]; if (!def) return "";
-    const prm = Object.entries(Object.assign({}, def.params, x.params)).map(([n, v]) => `<label class="small">${esc(n)} <input data-k="${k}" data-p="${esc(n)}" type="number" step="any" value="${v}" style="width:64px"></label>`).join(" ");
+    const prm = Object.entries(Object.assign({}, def.params, x.params)).map(([n, v]) => def.options && def.options[n]
+      ? `<label class="small">${esc(n)} <select data-k="${k}" data-p="${esc(n)}">${def.options[n].map(([ov, ol]) => `<option value="${esc(String(ov))}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select></label>`
+      : `<label class="small">${esc(n)} <input data-k="${k}" data-p="${esc(n)}" type="number" step="any" value="${v}" style="width:64px"></label>`).join(" ");
     return `<div class="row card"><b style="flex:1">${esc(def.name)}</b>${prm}<button class="x" data-rm="${k}" title="Remove">&times;</button></div>`; }).join("") || `<div class="muted">None</div>`;
   $("#indList").innerHTML = Object.entries(INDICATORS).filter(([k, d]) => d.name.toLowerCase().includes(q) || k.includes(q))
     .map(([k, d]) => `<div data-add="${k}"><span>${esc(d.name)}</span><span class="muted small">${d.overlay ? "overlay" : "pane"}</span></div>`).join("");
@@ -924,7 +988,11 @@ function renderInd() {
 $("#indQ").addEventListener("input", renderInd);
 $("#indList").addEventListener("click", e => { const d = e.target.closest("[data-add]"); if (!d) return; S.indicators.push({type: d.dataset.add, params: {...INDICATORS[d.dataset.add].params}}); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
 $("#indActive").addEventListener("click", e => { const b = e.target.closest("[data-rm]"); if (!b) return; S.indicators.splice(+b.dataset.rm, 1); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
-$("#indActive").addEventListener("change", e => { const i = e.target; if (!i.dataset.p) return; const v = parseFloat(i.value); if (!fin(v) || v <= 0 && i.dataset.p !== "mult") return;
+$("#indActive").addEventListener("change", e => { const i = e.target; if (!i.dataset.p) return;
+  if (i.tagName === "SELECT") { const x = S.indicators[+i.dataset.k], opt = INDICATORS[x.type].options[i.dataset.p];
+    x.params = Object.assign({}, x.params, {[i.dataset.p]: typeof opt[0][0] === "number" ? Number(i.value) : i.value});
+    store.set("indicators", S.indicators); redrawAll(); return; }
+  const v = parseFloat(i.value); if (!fin(v) || v <= 0 && i.dataset.p !== "mult") return;
   const x = S.indicators[+i.dataset.k]; x.params = Object.assign({}, x.params, {[i.dataset.p]: Number.isInteger(INDICATORS[x.type].params[i.dataset.p]) ? Math.max(1, Math.min(500, Math.round(v))) : v});
   store.set("indicators", S.indicators); redrawAll(); });
 

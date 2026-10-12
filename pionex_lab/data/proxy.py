@@ -161,12 +161,15 @@ def http_get_json(url: str, timeout: float = 30.0):
     return None if blob is None else json.loads(blob.decode("utf-8"))
 
 
-def fetch_funding(conn, symbol: str, now_ms: int, days: int = 420, get_json=http_get_json) -> dict:
-    """Settled funding rates (public, no key) from the last stored settlement (or `days` back) to
-    now, paged 1000 at a time, into the separate proxy database's `funding` table."""
+def fetch_funding(conn, symbol: str, now_ms: int, days: int = 420, get_json=http_get_json,
+                  start_ms: int | None = None) -> dict:
+    """Settled funding rates (public, no key), paged 1000 at a time, into the separate proxy
+    database's `funding` table. Covers from `start_ms` (default `days` back): if stored history
+    does not reach that far back it is backfilled, otherwise only newer settlements are fetched."""
     conn.executescript(FUNDING_SCHEMA)
-    row = conn.execute("SELECT MAX(t) FROM funding WHERE symbol=?", (symbol,)).fetchone()
-    start = (row[0] + 1) if row and row[0] else now_ms - days * 86_400_000
+    want = start_ms if start_ms is not None else now_ms - days * 86_400_000
+    lo, hi = conn.execute("SELECT MIN(t), MAX(t) FROM funding WHERE symbol=?", (symbol,)).fetchone()
+    start = want if lo is None or lo > want + 8 * 3_600_000 else hi + 1
     got = 0
     while start < now_ms:
         page = get_json(f"{FUNDING_URL}?symbol={SYMBOLS[symbol]}&startTime={start}&limit=1000") or []
@@ -190,6 +193,103 @@ def funding_series(conn, symbol: str) -> list:
                                                              (symbol,))]
     except Exception:  # noqa: BLE001 - table absent: no funding history
         return []
+
+
+METRICS_VENUE = ("Binance USD-M futures metrics archive (data.binance.vision: open interest, long/short "
+                 "ratios, taker volume ratio) - PROXY VENUE, not Pionex")
+METRICS_SCHEMA = """CREATE TABLE IF NOT EXISTS metrics(symbol TEXT NOT NULL, t INTEGER NOT NULL, oi_coin REAL,
+  oi_usd REAL, top_ls_count REAL, top_ls_sum REAL, ls_count REAL, taker_ls REAL, PRIMARY KEY(symbol, t));"""
+METRIC_FIELDS = ("oi_coin", "oi_usd", "top_ls_count", "top_ls_sum", "ls_count", "taker_ls")
+
+
+def parse_metrics(csv_bytes: bytes) -> list:
+    """Binance daily metrics CSV -> [(t_ms, oi_coin, oi_usd, top_ls_count, top_ls_sum, ls_count, taker_ls)]."""
+    from datetime import datetime, timezone
+    out = []
+    for row in csv.reader(io.StringIO(csv_bytes.decode("utf-8"))):
+        if not row or row[0] == "create_time":
+            continue
+        t = int(datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() * 1000)
+        vals = []
+        for v in row[2:8]:
+            try:
+                vals.append(float(v))
+            except ValueError:
+                vals.append(None)
+        out.append((t, *vals))
+    return out
+
+
+def fetch_metrics(conn, symbol: str, today: date, months: int, get=http_get, workers: int = 8) -> dict:
+    """Daily futures-metrics archives (5-minute snapshots) for the research window, downloaded in
+    parallel with checksum verification. Days already complete in the table are skipped."""
+    from concurrent.futures import ThreadPoolExecutor
+    conn.executescript(METRICS_SCHEMA)
+    raw = SYMBOLS[symbol]
+    d, days = window_start(today, months), []
+    while d < today:
+        s_ms = _ms(d)
+        have = conn.execute("SELECT COUNT(*) FROM metrics WHERE symbol=? AND t>=? AND t<?",
+                            (symbol, s_ms, s_ms + 86_400_000)).fetchone()[0]
+        if have < 288:
+            days.append(d)
+        d += timedelta(days=1)
+
+    def one(day):
+        url = f"https://data.binance.vision/data/futures/um/daily/metrics/{raw}/{raw}-metrics-{day:%Y-%m-%d}.zip"
+        blob = get(url)
+        if blob is None:
+            return day, None
+        check = get(url + ".CHECKSUM")
+        if check is None or hashlib.sha256(blob).hexdigest() != check.decode().split()[0].strip().lower():
+            raise ProxyDataError(f"checksum problem for {url}")
+        with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            return day, parse_metrics(z.read(z.namelist()[0]))
+    got = missing = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for day, rows in ex.map(one, days):
+            if rows is None:
+                missing += 1
+                continue
+            with conn:
+                conn.executemany("INSERT OR REPLACE INTO metrics(symbol, t, oi_coin, oi_usd, top_ls_count, top_ls_sum, "
+                                 "ls_count, taker_ls) VALUES(?,?,?,?,?,?,?,?)", [(symbol, *r) for r in rows])
+            got += 1
+    total = conn.execute("SELECT COUNT(*) FROM metrics WHERE symbol=?", (symbol,)).fetchone()[0]
+    return {"symbol": symbol, "metric_days_downloaded": got, "metric_days_missing": missing, "metric_rows": total}
+
+
+def metrics_series(conn, symbol: str, start_ms: int | None = None) -> dict:
+    """{field: {t_ms: value}} of stored 5-minute metrics snapshots; empty if none."""
+    try:
+        rows = conn.execute(f"SELECT t, {', '.join(METRIC_FIELDS)} FROM metrics WHERE symbol=? AND t>=? ORDER BY t",
+                            (symbol, start_ms or 0)).fetchall()
+    except Exception:  # noqa: BLE001 - table absent
+        return {}
+    return {f: {int(r[0]): r[k + 1] for r in rows if r[k + 1] is not None} for k, f in enumerate(METRIC_FIELDS)}
+
+
+def metrics_aligned(conn, symbol: str, times: list, fields=("oi_usd", "ls_count")) -> dict:
+    """{field: [value per bar]} using the snapshot stamped at each bar's OPEN time (known before
+    the bar closes; conservative). A bar with no snapshot within 10 minutes before its open gets NaN."""
+    nan = float("nan")
+    out = {f: [nan] * len(times) for f in fields}
+    if not times:
+        return out
+    try:
+        rows = conn.execute(f"SELECT t, {', '.join(fields)} FROM metrics WHERE symbol=? AND t>=? AND t<=? ORDER BY t",
+                            (symbol, times[0] - 600_000, times[-1])).fetchall()
+    except Exception:  # noqa: BLE001 - table absent: no metrics
+        return out
+    j = -1
+    for i, t in enumerate(times):
+        while j + 1 < len(rows) and rows[j + 1][0] <= t:
+            j += 1
+        if j >= 0 and t - rows[j][0] <= 600_000:
+            for k, f in enumerate(fields):
+                v = rows[j][k + 1]
+                out[f][i] = nan if v is None else float(v)
+    return out
 
 
 def tracking_check(proxy_bars, pionex_bars) -> dict:

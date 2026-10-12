@@ -197,7 +197,9 @@ def _evaluate(cls, universe, symbols, t0, t1, span_days, registry, cycle_id, cos
     }
     failed = [k for k, g in gates.items() if not g["pass"]]
     sample_only = set(failed) <= {"min_oos_trades", "min_oos_days"} and failed
-    status = "QUALIFIED_FOR_PAPER" if not failed else "INSUFFICIENT_DATA" if sample_only else "REJECTED"
+    # No out-of-sample trades at all means the hypothesis could not be evaluated, not that it failed.
+    status = ("QUALIFIED_FOR_PAPER" if not failed else
+              "INSUFFICIENT_DATA" if sample_only or net["n"] == 0 else "REJECTED")
     edge = max(0.0, lower_gross) if lower_gross is not None else 0.0
     m = {"oos_net": net, "oos_gross": gross, "oos_stress": stress, "fold_totals_bps": fold_totals,
          "fold_notes": fold_notes, "test_trades": len(test), "concentration": metrics.concentration(oos_all),

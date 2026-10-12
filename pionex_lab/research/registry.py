@@ -84,9 +84,15 @@ class Registry:
         return json.loads(row[0]) if row else {}
 
     def rejection_counts(self) -> dict:
-        """strategy -> number of cycles that REJECTED it (INSUFFICIENT_DATA does not count)."""
-        return dict(self.conn.execute("SELECT strategy, COUNT(*) FROM candidates WHERE status='REJECTED' "
-                                      "GROUP BY strategy").fetchall())
+        """strategy -> number of cycles that REJECTED it on real out-of-sample trades
+        (INSUFFICIENT_DATA, and older REJECTED rows with zero OOS trades, do not count)."""
+        return dict(self.conn.execute(
+            "SELECT strategy, COUNT(*) FROM candidates WHERE status='REJECTED' "
+            "AND COALESCE(json_extract(metrics, '$.oos_net.n'), 0) > 0 GROUP BY strategy").fetchall())
+
+    def test_counts(self) -> dict:
+        """strategy -> number of research cycles that evaluated it, whatever the outcome."""
+        return dict(self.conn.execute("SELECT strategy, COUNT(*) FROM candidates GROUP BY strategy").fetchall())
 
     def trial_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM trials").fetchone()[0]

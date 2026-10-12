@@ -1,4 +1,5 @@
 """Hypotheses pre-registered 2026-10-06 (synthetic data only) and hypothesis retirement."""
+import math
 import unittest
 
 from pionex_lab.data.store import resample
@@ -241,11 +242,103 @@ class ElliottAbc(unittest.TestCase):
             self.assertGreater(confirmed, bar)                              # known only after the reversal
 
 
+def with_metrics(b5, oi=None, ls=None):
+    n = len(b5)
+    b5.metrics = {"oi_usd": oi if oi is not None else [1e9] * n, "ls_count": ls if ls is not None else [1.0] * n}
+    return b5
+
+
+class Positioning(unittest.TestCase):
+    def test_metrics_align_to_bar_open_and_gaps_are_nan(self):
+        import sqlite3
+        from pionex_lab.data import proxy
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(proxy.METRICS_SCHEMA)
+        conn.executemany("INSERT INTO metrics(symbol, t, oi_usd, ls_count) VALUES(?,?,?,?)",
+                         [("BTC_USDT", T0 + k * 300_000, 100.0 + k, 1.0) for k in range(10) if k != 5])
+        times = [T0 + k * 300_000 for k in range(10)] + [T0 + 30 * 300_000]
+        m = proxy.metrics_aligned(conn, "BTC_USDT", times)
+        self.assertEqual(m["oi_usd"][3], 103.0)                           # the snapshot at the bar's open
+        self.assertEqual(m["oi_usd"][5], 104.0)                           # missing: previous within 10 min
+        self.assertTrue(math.isnan(m["oi_usd"][-1]))                      # too old: NaN, never stale data
+        rows = proxy.parse_metrics(b"create_time,symbol,a,b,c,d,e,f\n2023-04-01 00:05:00,BTCUSDT,1,2,3,4,5,\n")
+        self.assertEqual(rows[0][0] % 300_000, 0)
+        self.assertEqual(rows[0][1:], (1.0, 2.0, 3.0, 4.0, 5.0, None))
+
+    def test_oi_flush_reversal_needs_the_oi_drop(self):
+        cls = catalog.ALL["oi_flush_reversal"]
+        p = {"n": 6, "drop": 0.015, "rr": 1.5}
+        closes = random_walk(330, 100.0, 0.0005, seed=7)
+        closes += [closes[-1] * (1 - 0.004 * k) for k in range(1, 7)] + [closes[-1] * 0.978]
+        oi = [1e9] * 330 + [1e9 * (1 - 0.006 * k) for k in range(1, 8)]        # -4.2% OI over the flush
+        u = universe_5m(closes)
+        with_metrics(u["BTC_USDT"][0], oi=oi)
+        sig = signals(cls(p), u)
+        self.assertTrue(sig)
+        self.assertEqual(sig[-1].bar_time, T0 + 336 * 300_000)              # the green bar after the flush
+        with_metrics(u["BTC_USDT"][0])                                       # flat OI: no flush, no trade
+        self.assertEqual(signals(cls(p), u), [])
+        del u["BTC_USDT"][0].metrics                                         # no metrics (live engine): none
+        self.assertEqual(signals(cls(p), u), [])
+
+    def test_oi_confirmed_breakout_needs_rising_oi(self):
+        cls = catalog.ALL["oi_confirmed_breakout"]
+        p = {"n": 24, "oi_up": 0.005, "rr": 1.5}
+        closes = [100 * (1.0003 ** k) for k in range(400)]
+        closes[380:390] = [closes[379]] * 10
+        closes[390] = closes[379] * 1.004                                    # first close above the 24-bar high
+        u = universe_5m(closes)
+        with_metrics(u["BTC_USDT"][0], oi=[1e9 * (1 + 0.001 * k) for k in range(400)])
+        fired = [s.bar_time for s in signals(cls(p), u)]
+        self.assertIn(T0 + 390 * 300_000, fired)
+        with_metrics(u["BTC_USDT"][0])                                       # flat OI: short covering, skip
+        self.assertNotIn(T0 + 390 * 300_000, [s.bar_time for s in signals(cls(p), u)])
+
+    def test_crowded_short_squeeze_needs_crowded_shorts(self):
+        cls = catalog.ALL["crowded_short_squeeze"]
+        p = {"z0": 1.5, "trigger": 12, "rr": 1.5}
+        n = 9000
+        closes = random_walk(n, 100.0, 0.0008, seed=11)
+        closes[-1] = max(closes[-13:-1]) * 1.004                             # breakout on the last bar
+        ls = [1.0 + 0.05 * math.sin(k / 50) for k in range(n)]
+        u = universe_5m(closes)
+        with_metrics(u["BTC_USDT"][0], ls=ls[:-1] + [0.7])                   # ratio collapses: shorts crowded
+        self.assertIn(T0 + (n - 1) * 300_000, [s.bar_time for s in signals(cls(p), u)])
+        with_metrics(u["BTC_USDT"][0], ls=ls)
+        self.assertNotIn(T0 + (n - 1) * 300_000, [s.bar_time for s in signals(cls(p), u)])
+
+
+class ZeroTradeLabelling(unittest.TestCase):
+    def test_zero_oos_trades_is_insufficient_data_and_untestable_ones_retire(self):
+        from pionex_lab.cli import select_hypotheses
+        from pionex_lab.research.backtest import CostModel
+        from pionex_lab.research.registry import Registry
+        from pionex_lab.research.walkforward import run_cycle
+        from helpers import cleanup, mandate, tmp_paths
+        paths, d = tmp_paths()
+        try:
+            universe = {}
+            for k, s in enumerate(("BTC_USDT", "ETH_USDT")):
+                b5 = make_bars(s, "5M", random_walk(30 * 288, 100 + 50 * k, 0.002, seed=3 + k))
+                universe[s] = (b5, make_bars(s, "60M", b5.c[11::12], start=b5.t[0]))  # no metrics attached
+            reg = Registry(paths.research)
+            res = run_cycle(universe, reg, mandate(), CostModel(), T0 + 40 * 86_400_000,
+                            strategy_names=["oi_flush_reversal"])
+            self.assertEqual(res[0]["status"], "INSUFFICIENT_DATA")
+            self.assertEqual(reg.rejection_counts(), {})
+            self.assertEqual(reg.test_counts(), {"oi_flush_reversal": 1})
+        finally:
+            cleanup(d)
+        active, retired = select_hypotheses(["a", "b"], {}, 5, {"a": 4, "b": 3})
+        self.assertEqual((active, retired), (["b"], ["a"]))
+
+
 class Mandate(unittest.TestCase):
     def test_new_hypotheses_respect_search_budget_and_holding_cap(self):
         from helpers import mandate
         q = mandate().qualification
-        for name in ("capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_settlement_bounce",
+        for name in ("oi_flush_reversal", "oi_confirmed_breakout", "crowded_short_squeeze", "oi_flush_reversal_1h",
+                     "capitulation_reversal", "band_snapback_scalp", "us_open_breakout_scalp", "funding_settlement_bounce",
                      "elliott_abc_continuation",
                      "funding_extreme_1h", "elliott_abc_continuation_1h", "session_drift_1h",
                      "deep_pullback_1h"):

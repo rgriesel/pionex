@@ -373,6 +373,99 @@ class FundingSettlementBounce(Strategy):
                             {"funding_rank": rank, "funding_rate": rate}, hold=p["hold"])
 
 
+def _metric(d, name):
+    """Per-bar futures metric attached by research (b.metrics, from the labelled proxy archive);
+    all-NaN when absent (e.g. the live engine), so these hypotheses never signal without data."""
+    m = getattr(d["b5"], "metrics", None) or {}
+    return m.get(name) or [math.nan] * len(d["b5"])
+
+
+class OiFlushReversal(Strategy):
+    """Pre-registered 2026-10-12, before any test on any data. Positioning data, not OHLCV alone:
+    a deleveraging flush - open interest falls by at least `drop` within n bars while price falls by
+    at least 1.5 ATR - means forced liquidations have cleared leveraged longs; the first green bar
+    afterwards is bought. OI is read at each bar's open (conservative). Stop 0.25 ATR under the
+    flush low, target rr x risk, time exit 4h."""
+    name = "oi_flush_reversal"
+    grid = _grid(n=[6, 12], drop=[0.015, 0.03], rr=[1.5, 2.5])
+
+    def _prepare_symbol(self, d):
+        d["oi"] = _metric(d, "oi_usd")
+        for n in (6, 12):
+            d[f"lo{n}"] = prior_min(d["b5"].l, n)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, n, a = d["b5"], p["n"], d["atr"][i]
+        if i < n + 1 or not finite(d["oi"][i], d["oi"][i - n], a, d[f"lo{n}"][i]) or a <= 0 or d["oi"][i - n] <= 0:
+            return None
+        if d["oi"][i] > d["oi"][i - n] * (1 - p["drop"]) or b.c[i - n] - min(d[f"lo{n}"][i], b.l[i]) < 1.5 * a:
+            return None
+        if b.c[i] <= b.o[i]:
+            return None
+        stop = min(d[f"lo{n}"][i], b.l[i]) - 0.25 * a
+        return self._signal(d, symbol, i, stop, b.c[i] + p["rr"] * (b.c[i] - stop), "first green bar after an OI flush",
+                            {"oi_change": d["oi"][i] / d["oi"][i - n] - 1})
+
+
+class OiConfirmedBreakout(Strategy):
+    """Pre-registered 2026-10-12, before any test on any data. A breakout carried by NEW positions
+    (open interest up by at least `oi_up` over the breakout window) rather than short covering, in a
+    1h uptrend: buy the first close above the prior n-bar high. Stop 2 ATR, target rr x risk."""
+    name = "oi_confirmed_breakout"
+    grid = _grid(n=[24, 48], oi_up=[0.005, 0.015], rr=[1.5, 2.5])
+
+    def _prepare_symbol(self, d):
+        d["oi"] = _metric(d, "oi_usd")
+        for n in (24, 48):
+            d[f"hi{n}"] = prior_max(d["b5"].h, n)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, n, a = d["b5"], p["n"], d["atr"][i]
+        hi, hi_prev = d[f"hi{n}"][i], d[f"hi{n}"][i - 1] if i else math.nan
+        if i < n + 1 or not finite(hi, hi_prev, a, d["oi"][i], d["oi"][i - n]) or a <= 0 or d["oi"][i - n] <= 0:
+            return None
+        if not (b.c[i] > hi and b.c[i - 1] <= hi_prev):
+            return None
+        if d["oi"][i] < d["oi"][i - n] * (1 + p["oi_up"]) or not self._uptrend_1h(d, i):
+            return None
+        stop = b.c[i] - 2 * a
+        return self._signal(d, symbol, i, stop, b.c[i] + p["rr"] * (b.c[i] - stop), "breakout with rising open interest",
+                            {"oi_change": d["oi"][i] / d["oi"][i - n] - 1})
+
+
+class CrowdedShortSqueeze(Strategy):
+    """Pre-registered 2026-10-12, before any test on any data. Crowded shorts: the global accounts
+    long/short ratio is at least z0 standard deviations below its trailing 30-day mean (many more
+    accounts short than usual); the first close above the prior `trigger`-bar high starts the
+    squeeze and is bought. Stop 2 ATR, target rr x risk."""
+    name = "crowded_short_squeeze"
+    grid = _grid(z0=[1.5, 2.0], trigger=[12, 24], rr=[1.5, 2.5])
+    z_days = 30
+
+    def _prepare_symbol(self, d):
+        ls = _metric(d, "ls_count")
+        w = max(20, int(self.z_days * 86_400_000 / INTERVAL_MS[self.base_interval]))
+        filled = [v if finite(v) else 0.0 for v in ls]
+        mean, sd = sma(filled, w), rolling_std(filled, w)
+        d["ls_z"] = [(v - m) / s if finite(v, m, s) and s > 0 else math.nan for v, m, s in zip(ls, mean, sd)]
+        for n in (12, 24):
+            d[f"hi{n}"] = prior_max(d["b5"].h, n)
+
+    def check(self, prep, symbol, i):
+        d, p = prep[symbol], self.params
+        b, n, a = d["b5"], p["trigger"], d["atr"][i]
+        hi, hi_prev = d[f"hi{n}"][i], d[f"hi{n}"][i - 1] if i else math.nan
+        if i < 2 or not finite(hi, hi_prev, a, d["ls_z"][i]) or a <= 0 or d["ls_z"][i] > -p["z0"]:
+            return None
+        if not (b.c[i] > hi and b.c[i - 1] <= hi_prev):
+            return None
+        stop = b.c[i] - 2 * a
+        return self._signal(d, symbol, i, stop, b.c[i] + p["rr"] * (b.c[i] - stop), "breakout while shorts are crowded",
+                            {"ls_z": d["ls_z"][i]})
+
+
 def _us_open_utc_ms(t_ms: int) -> int:
     """09:30 New York time on t_ms's UTC date, in UTC ms (US DST: second Sunday of March to the
     first Sunday of November)."""
@@ -609,7 +702,8 @@ class DeepPullback1h(Strategy):
 
 STRATEGIES = {cls.name: cls for cls in (VolatilityBreakout, TrendPullback, RangeReversion, RelativeStrength,
                                         CapitulationReversal, BandSnapbackScalp, UsOpenBreakoutScalp,
-                                        FundingSettlementBounce, ElliottAbcContinuation)}
+                                        FundingSettlementBounce, ElliottAbcContinuation,
+                                        OiFlushReversal, OiConfirmedBreakout, CrowdedShortSqueeze)}
 
 
 def _hourly(cls):
@@ -621,7 +715,8 @@ def _hourly(cls):
         "__doc__": (cls.__doc__ or "") + " [1h base / 4h context variant]"})
 
 
-HOURLY = {c.name: c for c in (FundingExtreme1h, ElliottAbcContinuation1h, SessionDrift1h, DeepPullback1h,
+HOURLY = {c.name: c for c in (FundingExtreme1h, _hourly(OiFlushReversal), _hourly(OiConfirmedBreakout),
+                              _hourly(CrowdedShortSqueeze), ElliottAbcContinuation1h, SessionDrift1h, DeepPullback1h,
                               _hourly(VolatilityBreakout), _hourly(TrendPullback), _hourly(RangeReversion),
                               _hourly(RelativeStrength))}
 ALL = {**STRATEGIES, **HOURLY}

@@ -200,13 +200,20 @@ def cmd_fetch_proxy(args, paths, cfg, mandate):
     except (ProxyDataError, URLError, OSError) as exc:
         print(f"FETCH FAILED: {exc}. Existing proxy history is kept.")
         return 3
-    from .data.proxy import FUNDING_VENUE, fetch_funding
+    from .data.proxy import FUNDING_VENUE, METRICS_VENUE, fetch_funding, fetch_metrics, window_start_ms
+    months = args.months or DEFAULT_MONTHS
     print(f"source: {FUNDING_VENUE}")
     for s in cfg["research_universe"]:
         try:
-            print(json.dumps(fetch_funding(store.conn, s, now)))
+            print(json.dumps(fetch_funding(store.conn, s, now, start_ms=window_start_ms(today, months))))
         except (URLError, OSError, ValueError, KeyError) as exc:
             print(f"FUNDING FETCH FAILED for {s}: {exc}. Existing funding history is kept.")
+    print(f"source: {METRICS_VENUE}")
+    for s in cfg["research_universe"]:
+        try:
+            print(json.dumps(fetch_metrics(store.conn, s, today, months)))
+        except (ProxyDataError, URLError, OSError, ValueError) as exc:
+            print(f"METRICS FETCH FAILED for {s}: {exc}. Existing metrics are kept.")
     if paths.market.exists():
         mv = MarketView(paths.market)
         for s in cfg["research_universe"]:
@@ -244,9 +251,10 @@ def _universe_bars(paths, cfg, timeframe="5m", source="pionex"):
     for s in cfg["research_universe"]:
         b = src.bars(s, base, start_ms=start)
         ctx = resample(b, context) if context == "4H" else src.bars(s, context, start_ms=start)
-        if funding_conn is not None:  # labelled proxy-venue funding, read only by funding hypotheses
-            from .data.proxy import funding_series
+        if funding_conn is not None:  # labelled proxy-venue funding/metrics, read only by hypotheses that use them
+            from .data.proxy import funding_series, metrics_aligned
             b.funding = funding_series(funding_conn, s)
+            b.metrics = metrics_aligned(funding_conn, s, b.t)
         out[s] = (b, ctx)
     return out, mv
 
@@ -264,8 +272,9 @@ def cmd_research(args, paths, cfg, mandate):
     universe, mv = _universe_bars(paths, cfg, args.timeframe, args.data)
     data_source = {"venue": "Pionex public API"}
     if any(getattr(b, "funding", None) for b, _ in universe.values()):
-        from .data.proxy import FUNDING_VENUE
+        from .data.proxy import FUNDING_VENUE, METRICS_VENUE
         data_source["auxiliary"] = FUNDING_VENUE
+        data_source["auxiliary_metrics"] = METRICS_VENUE
     if proxy:
         from .data.proxy import VENUE, tracking_check
         base_iv = TIMEFRAMES[args.timeframe][0]
@@ -295,7 +304,7 @@ def cmd_research(args, paths, cfg, mandate):
           f"({'observed median' if spreads else 'default; no book ticks yet'}), impact {cost.impact_bps} bps")
     registry = Registry(paths.research)
     active, retired = select_hypotheses(names, registry.rejection_counts(),
-                                        int(mandate.qualification["max_hypotheses_per_cycle"]))
+                                        int(mandate.qualification["max_hypotheses_per_cycle"]), registry.test_counts())
     if retired:
         print(f"retired from research after >= {RETIRE_AFTER_REJECTIONS} rejections (still shadow-measured): "
               + ", ".join(retired))
@@ -398,12 +407,16 @@ MIN_HISTORY_DAYS = {"5m": 20.0, "1h": 90.0}
 # daily research budget; re-testing the same frozen grid adds no information. It stays in the paper
 # engine's shadow book, so its live signals are still measured.
 RETIRE_AFTER_REJECTIONS = 2
+RETIRE_AFTER_TESTS = 4          # also retire hypotheses that never produce enough trades to judge
 
 
-def select_hypotheses(names, rejection_counts: dict, max_n: int) -> tuple:
-    """(active, retired): retire hypotheses rejected in >= RETIRE_AFTER_REJECTIONS cycles; research
-    the rest (least-tested first, catalog order otherwise) up to the mandate's per-cycle maximum."""
-    retired = [n for n in names if rejection_counts.get(n, 0) >= RETIRE_AFTER_REJECTIONS]
+def select_hypotheses(names, rejection_counts: dict, max_n: int, test_counts: dict | None = None) -> tuple:
+    """(active, retired): retire hypotheses rejected on real OOS trades in >= RETIRE_AFTER_REJECTIONS
+    cycles, or evaluated >= RETIRE_AFTER_TESTS times; research the rest (least-tested first,
+    catalog order otherwise) up to the mandate's per-cycle maximum."""
+    tests = test_counts or {}
+    retired = [n for n in names if rejection_counts.get(n, 0) >= RETIRE_AFTER_REJECTIONS
+               or tests.get(n, 0) >= RETIRE_AFTER_TESTS]
     rest = [n for n in names if n not in retired]
     active = sorted(rest, key=lambda n: (rejection_counts.get(n, 0), rest.index(n)))[:max_n]
     return active, retired

@@ -44,6 +44,19 @@ rep('<nav class="tabs" role="tablist"',
     '<p class="soft">Paper results are simulated and are not evidence of future profit. This page cannot approve or start live trading.</p></section>\n'
     '<nav class="tabs" role="tablist"')
 
+# --- markup: the firm (paper swing books, pipeline, agents, routines); read-only
+rep('<nav class="tabs" role="tablist"',
+    '<section class="card firm" id="firmPanel" aria-label="The firm" hidden>'
+    '<div class="panel-head"><div><h2>The firm · paper swing books</h2><p class="sub" id="firmHeadline"></p></div>'
+    '<span class="badge" id="firmBadge">PAPER ONLY</span></div>'
+    '<div class="table-wrap"><table><thead><tr><th>Book</th><th>Paper USDT</th><th>Equity</th><th>Return</th>'
+    '<th>Max drawdown</th><th>Invested</th><th>Holdings</th><th>Days</th></tr></thead><tbody id="firmBooks"></tbody></table></div>'
+    '<div class="firm-grid"><div><h3>Strategy pipeline</h3><div id="firmPipeline"></div></div>'
+    '<div><h3>Agents</h3><div id="firmAgents"></div></div>'
+    '<div><h3>Routines &amp; processes</h3><div id="firmRoutines"></div></div></div>'
+    '<p class="soft" id="firmNote" style="margin-top:12px"></p></section>\n'
+    '<nav class="tabs" role="tablist"')
+
 # --- styles for the added panels (responsive; long values wrap instead of overflowing)
 rep("[hidden]{display:none!important}",
     ".ext-panels{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px}"
@@ -51,7 +64,10 @@ rep("[hidden]{display:none!important}",
     "#gateRows .row>span:last-child{flex:none;white-space:nowrap;overflow-wrap:normal;font-size:.8rem;font-weight:600}"
     ".readiness{margin-bottom:18px}.readiness .row span{overflow-wrap:anywhere;min-width:0}"
     "#readinessRows .row>span:last-child{flex:none;white-space:nowrap;font-size:.8rem;font-weight:600}"
-    "@media(max-width:980px){.ext-panels{grid-template-columns:minmax(0,1fr)}}[hidden]{display:none!important}")
+    ".firm{margin-bottom:18px}.firm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}"
+    ".firm h3{font-size:.95rem;margin:0 0 4px}.firm .row span{overflow-wrap:anywhere;min-width:0}"
+    ".firm .row>span:last-child{flex:none;white-space:nowrap;font-size:.8rem;font-weight:600}"
+    "@media(max-width:980px){.ext-panels,.firm-grid{grid-template-columns:minmax(0,1fr)}}[hidden]{display:none!important}")
 
 # --- script: state
 rep("let active=null;", "let active=null,connected=false;const conn={token:null,timer:null,lastOk:0,pollMs:10000,error:null};"
@@ -66,6 +82,8 @@ rep("str(r.human_comparison.note,'Human note');return r;",
     "if(r.readiness!=null){obj(r.readiness,'Readiness');if(!READY_LABEL[r.readiness.stage])fail('Unknown readiness stage');str(r.readiness.headline,'Readiness headline');str(r.readiness.rule,'Readiness rule');if(!Array.isArray(r.readiness.strategies)||r.readiness.strategies.length>100)fail('Readiness strategies must be a short array');for(const s of r.readiness.strategies){obj(s,'Readiness strategy');if(!READY_LABEL[s.stage])fail('Unknown readiness stage');str(s.strategy,'strategy');str(s.detail,'detail')}}"
     "for(const k of ['risk_state','runtime'])if(r[k]!=null)obj(r[k],k);"
     "if(r.risk_state&&r.risk_state.authoritative_max_drawdown_pct!=null)num(r.risk_state.authoritative_max_drawdown_pct,'Authoritative drawdown',0,100);"
+    "if(r.firm!=null){obj(r.firm,'Firm');for(const [k,lim] of [['books',10],['agents',20],['routines',20],['processes',20]]){if(r.firm[k]!=null&&(!Array.isArray(r.firm[k])||r.firm[k].length>lim))fail('firm.'+k+' must be a short array')}"
+    "for(const b of r.firm.books||[]){obj(b,'Book');str(b.book,'book');str(b.holdings,'holdings');for(const k of ['paper_usdt','equity_usdt','return_pct','max_drawdown_pct','invested_pct','paper_days'])num(b[k],k)}}"
     "return r;")
 
 # --- render: honest connection labels
@@ -91,7 +109,18 @@ function row(label,value){return '<div class="row"><span>'+esc(label)+'</span><s
 function renderReadiness(r){let rd=r.readiness;$('readinessPanel').hidden=!rd;if(!rd)return;let ready=rd.stage==='READY_FOR_REVIEW';
  $('readinessBadge').className='badge '+(ready?'live':'');setText('readinessBadge',READY_LABEL[rd.stage]);setText('readinessHeadline',rd.headline);setText('readinessRule',rd.rule);
  $('readinessRows').innerHTML=rd.strategies.map(s=>'<div class="row"><span>'+esc(s.strategy)+'<br><span class="soft">'+esc(s.detail)+'</span></span><span class="'+(s.stage==='READY_FOR_REVIEW'?'positive':s.stage==='NOT_QUALIFIED'||s.stage==='PAPER_TRIAL_NOT_PROFITABLE'?'negative':'')+'">'+esc(READY_LABEL[s.stage])+'</span></div>').join('')}
-function renderExtensions(r){renderReadiness(r);let show=!!(r.live_gates||r.runtime||r.risk_state);$('extPanels').hidden=!show;if(!show)return;
+function ago(s){let d=(Date.now()-Date.parse(s))/1000;if(!Number.isFinite(d))return '—';return d<3600?Math.max(0,Math.round(d/60))+' min ago':d<172800?Math.round(d/3600)+' h ago':Math.round(d/86400)+' d ago'}
+function renderFirm(r){let f=r.firm;$('firmPanel').hidden=!f;if(!f)return;
+ if(f.error){setText('firmHeadline','Firm status unavailable: '+f.error);$('firmBooks').innerHTML='';return}
+ let books=f.books||[];
+ setText('firmHeadline',books.length?'Paper books from '+books[0].start+' · earliest owner review '+(f.review_after||'—')+' (60 paper days, then the risk officer, then you decide)':'No paper swing books yet');
+ $('firmBooks').innerHTML=books.length?books.map(b=>'<tr><td>'+esc(b.book)+'</td><td>'+esc(b.paper_usdt.toFixed(0))+'</td><td>'+esc(b.equity_usdt.toFixed(2))+'</td><td class="'+(b.return_pct>0?'positive':b.return_pct<0?'negative':'')+'">'+pct(b.return_pct)+'</td><td>'+pct(b.max_drawdown_pct)+'</td><td>'+esc(b.invested_pct.toFixed(1))+'%</td><td>'+esc(b.holdings)+'</td><td>'+esc(String(b.paper_days))+'</td></tr>').join(''):'<tr><td colspan="8" class="soft">No books yet.</td></tr>';
+ let p=f.pipeline||{};
+ $('firmPipeline').innerHTML=row('Ideas tested',String(p.tested??'—'))+row('Failed after costs',String(p.failed??'—'))+(p.candidates||[]).map(c=>'<div class="row"><span>'+esc(c.strategy)+'<br><span class="soft">'+esc(c.status)+'</span></span></div>').join('');
+ $('firmAgents').innerHTML=(f.agents||[]).map(a=>'<div class="row"><span>'+esc(a.role)+'<br><span class="soft">'+esc(a.does)+'</span></span><span>'+esc(a.model)+'</span></div>').join('');
+ $('firmRoutines').innerHTML=(f.routines||[]).map(x=>row(x.at+' · '+x.what,x.last_output==='reported in chat'?'in chat':ago(x.last_output))).join('')+(f.processes||[]).map(x=>'<div class="row"><span>'+esc(x.what)+'</span><span class="'+(x.alive?'positive':'negative')+'">'+(x.alive?'RUNNING':'NOT RUNNING')+'</span></div>').join('');
+ setText('firmNote',f.note||'')}
+function renderExtensions(r){renderReadiness(r);renderFirm(r);let show=!!(r.live_gates||r.runtime||r.risk_state);$('extPanels').hidden=!show;if(!show)return;
  let gates=r.live_gates||[];let pass=gates.filter(g=>g.status==='PASS').length;setText('gatesBadge',gates.length&&pass===gates.length?'ALL GATES PASS':'LIVE DISABLED · '+pass+'/'+gates.length+' PASS');
  $('gateRows').innerHTML=gates.length?gates.map(g=>'<div class="row"><span>'+esc(g.gate)+'<br><span class="soft">'+esc(g.detail)+'</span></span><span class="'+(g.status==='PASS'?'positive':'negative')+'">'+esc(g.status==='NOT_IMPLEMENTED'?'NOT BUILT':g.status)+'</span></div>').join(''):'<p class="soft">No gate report supplied.</p>';
  let rt=r.runtime||{},rs=r.risk_state||{};let rows='';

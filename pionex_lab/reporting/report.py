@@ -331,6 +331,11 @@ def _build(paths, mandate, now, journal, market, risk, registry, universe) -> di
                     "incidents": len(incidents), "journal_rows": journal.count(),
                     "end_at": started[2]["end_at"] if started else None},
     }
+    try:                                    # firm view (swing books, agents, routines); never breaks the ledger report
+        from .firm import firm_status
+        report["firm"] = firm_status(paths.root, now)
+    except Exception as exc:  # noqa: BLE001
+        report["firm"] = {"error": str(exc)[:500]}
     return validate_report(report)
 
 
@@ -440,4 +445,16 @@ def validate_report(r: dict) -> dict:
                 fail("Unknown readiness stage")
             text(s["strategy"], "Readiness strategy")
             text(s["detail"], "Readiness detail")
+    f = r.get("firm")
+    if f is not None:
+        if not isinstance(f, dict):
+            fail("firm must be an object")
+        for k, lim in (("books", 10), ("agents", 20), ("routines", 20), ("processes", 20)):
+            if not isinstance(f.get(k, []), list) or len(f.get(k, [])) > lim:
+                fail(f"firm.{k} must be a short array")
+        for b in f.get("books", []):
+            for k in ("book", "holdings"):
+                text(b[k], k)
+            for k in ("equity_usdt", "return_pct", "max_drawdown_pct", "invested_pct"):
+                num(b[k], k)
     return r

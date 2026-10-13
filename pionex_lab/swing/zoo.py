@@ -682,15 +682,26 @@ TIMEFRAMES = {"1m": 120, "5m": 96, "15m": 64, "1h": 48, "4h": 30}      # max hol
 _CACHE = {}
 
 
-def load(tf, symbol="BTC_USDT"):
-    """Bars as plain lists: 1m from var/fib/btc_1m.db (12 months), others from the proxy archive."""
-    key = (tf, symbol)
+EARLY_DB = "early_1h.db"                          # 1h bars 2019-01 -> 2023-03 (download_early); never the live DBs
+
+
+def load(tf, symbol="BTC_USDT", source=None):
+    """Bars as plain lists: 1m from var/fib/btc_1m.db (12 months), others from the proxy archive.
+    source="early" reads the 2019-2023-03 history in var/alpha/early_1h.db (1h/4h only)."""
+    key = (tf, symbol) if source is None else (tf, symbol, source)
     if key in _CACHE:
         return _CACHE[key]
     from ..data.store import MarketView, resample
     from ..paths import Paths
     p = Paths.default()
-    if tf == "1m":
+    if source == "early":
+        if tf not in ("1h", "4h"):
+            raise ValueError("the early archive holds 1h bars only (1h or 4h)")
+        bars = MarketView(p.root / "alpha" / EARLY_DB).bars(symbol, "60M")
+        bars = resample(bars, "4H") if tf == "4h" else bars
+    elif source is not None:
+        raise ValueError(f"unknown source {source!r}")
+    elif tf == "1m":
         bars = MarketView(p.root / "fib" / ("btc_1m.db" if symbol == "BTC_USDT" else "eth_1m.db")).bars(symbol, "1M")
     elif tf in ("5m", "15m"):
         bars = MarketView(p.proxy_market).bars(symbol, "5M")
@@ -725,8 +736,8 @@ Pass for a strategy: pooled out-of-sample mean net > 0, profit factor >= 1.1, po
 
 
 def _pooled_work(task):
-    tf, name, symbol, hold = task
-    b = load(tf, symbol)
+    tf, name, symbol, hold, *rest = task                      # optional 5th item: load() source ("early")
+    b = load(tf, symbol, rest[0] if rest else None)
     oos, folds, chosen, _ = evaluate(b, name, hold)
     return name, symbol, [{"entry_time": x[0], "exit_time": x[1], "side": x[2], "gross_bps": x[3] * 1e4, "net_bps": x[4] * 1e4} for x in oos]
 
@@ -754,6 +765,124 @@ def run_pooled(tf="4h", hold=60, workers=None):
         out[name] = {"n": len(nets), "mean_bps": mean, "pf": pf, "win": len(wins) / len(nets) if nets else None,
                      "coins_positive": pos, "coin_total_pct": coin_tot, "bootstrap_lower_bps": lb,
                      "pass": bool(cand and lb is not None and lb > 0)}
+    return out
+
+
+EARLY_STRATEGIES = ("keltner_breakout", "supertrend")
+EARLY_START, EARLY_END = (2019, 1), (2023, 4)          # first month wanted; first month NOT wanted (exclusive)
+
+
+def _retrying(get, tries=4, pause=3.0):
+    """Wrap a downloader so transient network errors are retried; a 404 (None) is returned as is."""
+    import time
+
+    def wrapped(url):
+        for k in range(tries):
+            try:
+                return get(url)
+            except OSError:                                     # URLError, timeouts, HTTP 5xx (HTTPError is an OSError)
+                if k == tries - 1:
+                    raise
+                time.sleep(pause * (k + 1))
+    return wrapped
+
+
+def download_early(path=None, coins=COINS, get=None, now_ms=None):
+    """Binance spot 1h klines for `coins`, 2019-01 up to 2023-03-31, into a NEW database (default
+    var/alpha/early_1h.db) through the lab's proxy.fetch + MarketStore (checksum-verified archives).
+    Each coin starts at its first published monthly archive (its listing month). Nothing is written to
+    var/proxy_market.db or var/alpha/alts_1h.db, and no bar on or after 2023-04-01 is ever requested."""
+    import time
+    from datetime import date
+    from pathlib import Path
+    from ..data import proxy
+    from ..data.store import MarketStore
+    from ..paths import Paths
+    get = _retrying(get or proxy.http_get)
+    path = Path(path) if path else Paths.default().root / "alpha" / EARLY_DB
+    if path.name in ("proxy_market.db", "alts_1h.db", "market.db"):
+        raise ValueError(f"refusing to write into {path.name}")
+    now_ms = now_ms or int(time.time() * 1000)
+    end_idx = EARLY_END[0] * 12 + EARLY_END[1] - 1
+    store, out = MarketStore(path), []
+    try:
+        for sym in coins:
+            raw = proxy.SYMBOLS[sym]
+            first = None
+            for idx in range(EARLY_START[0] * 12 + EARLY_START[1] - 1, end_idx):
+                y, m = divmod(idx, 12)
+                if get(f"{proxy.BASE_URL}/monthly/klines/{raw}/1h/{raw}-1h-{y}-{m + 1:02d}.zip") is not None:
+                    first = idx
+                    break
+            if first is None:
+                out.append({"symbol": sym, "bars": 0, "note": "no monthly archive in the window"})
+                continue
+            cov = proxy.fetch(store, sym, "60M", end_idx - first, date(EARLY_END[0], EARLY_END[1], 1), now_ms, get)
+            y, m = divmod(first, 12)
+            cov["first_month"] = f"{y}-{m + 1:02d}"
+            out.append(cov)
+    finally:
+        store.close()
+    return out
+
+
+def run_pooled_early(hold=60, workers=None, save=True):
+    """Out-of-sample re-test of the two best 4h trend strategies on history the lab never used.
+
+    Pre-registered 2026-10-13 23:31 SAST (only the data download had run; no strategy had been
+    evaluated on this data). Why: the 2023-04..2026-10 pooled test (POOLED_RULES) left keltner_breakout
+    (+49.5 bps/trade, PF 1.30, 9/10 coins, bootstrap LB -7 bps at alpha 0.05/8) and supertrend (+45.3 bps,
+    PF 1.23, 9/10, LB -28 bps) as the two best; both were chosen after seeing that data, so this re-test
+    uses data none of the earlier work touched.
+    Data: Binance spot 1h klines (proxy venue, var/alpha/early_1h.db) from 2019-01-01 (or each coin's
+    listing month, if later) to 2023-03-31, resampled to 4h; strictly before 2023-04-01. Gaps (the
+    2023-03-24 trading halt, maintenance windows) stay gaps: a 4h bar needs all four 1h bars.
+    Procedure: IDENTICAL to run_pooled for keltner_breakout and supertrend only - the same STRATEGIES
+    grids x EXITS, the same per-coin 5-part walk-forward (parts 2-5 trade the config with the best net
+    expectancy on all earlier data, >= 30 trades), max hold 60 bars (10 days), Pionex 0.05% fee + 0.01%
+    slippage per side, signal on a closed bar and fill at the next open. Pooled over the 10 COINS.
+    PASS for a strategy needs ALL of: pooled OOS mean net > 0; profit factor >= 1.1; positive summed
+    net on >= 7 coins (counted among coins that have data, i.e. that produced >= 1 OOS trade; fewer than
+    7 such coins is a FAIL); and a daily-block bootstrap lower bound > 0 at alpha 0.05 / 2 (3-day blocks,
+    metrics.block_bootstrap_lower defaults). Run ONCE; nothing is changed after seeing the result, and a
+    changed idea would be a new test. A pass is a backtest on proxy-venue data, not evidence of profit.
+    """
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+    from ..research import metrics
+    alpha = 0.05 / len(EARLY_STRATEGIES)
+    tasks = [("4h", n, s, hold, "early") for n in EARLY_STRATEGIES for s in COINS]
+    with ProcessPoolExecutor(max_workers=workers or max(1, (os.cpu_count() or 2) - 1)) as pool:
+        res = list(pool.map(_pooled_work, tasks))
+    out = {"rules": run_pooled_early.__doc__, "alpha": alpha, "hold_bars": hold, "coverage": {}, "strategies": {}}
+    for s in COINS:
+        b = load("4h", s, "early")
+        out["coverage"][s] = {"bars_4h": len(b["t"]), "first": b["t"][0] if b["t"] else None,
+                              "last": b["t"][-1] if b["t"] else None}
+    for name in EARLY_STRATEGIES:
+        per = {s: tr for n, s, tr in res if n == name}
+        allt = sorted([t for tr in per.values() for t in tr], key=lambda x: x["exit_time"])
+        nets = [t["net_bps"] for t in allt]
+        wins = [x for x in nets if x > 0]
+        ls = [-x for x in nets if x < 0]
+        has = {s: tr for s, tr in per.items() if tr}
+        coin_tot = {s: sum(t["net_bps"] for t in tr) / 100 for s, tr in per.items()}
+        mean = sum(nets) / len(nets) if nets else 0.0
+        pf = sum(wins) / sum(ls) if ls else None
+        pos = sum(coin_tot[s] > 0 for s in has)
+        lb = metrics.block_bootstrap_lower(allt, alpha) if len(nets) > 1 else None
+        ok = bool(nets and mean > 0 and (pf or 0) >= 1.1 and len(has) >= 7 and pos >= 7 and lb is not None and lb > 0)
+        out["strategies"][name] = {
+            "n": len(nets), "mean_bps": mean, "pf": pf, "win": len(wins) / len(nets) if nets else None,
+            "coins_with_data": len(has), "coins_positive": pos, "coin_total_pct": coin_tot,
+            "coin_trades": {s: len(tr) for s, tr in per.items()}, "bootstrap_lower_bps": lb, "pass": ok,
+            "trades": allt}
+    if save:
+        import json
+        from ..paths import Paths
+        rep = Paths.default().reports
+        rep.mkdir(parents=True, exist_ok=True)
+        (rep / "zoo_pooled_4h_early.json").write_text(json.dumps(out), encoding="utf-8")
     return out
 
 

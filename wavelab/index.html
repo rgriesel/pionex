@@ -318,7 +318,115 @@ const WLOSC = (() => {
     }
     return {wt1, wt2, mf, mfi, vm, bull, rev, div, dfrom, dto, fair, trend, mfdiv, diamond, cond};
   }
-  return {DEFAULTS, calc};
+  /* ---- Prime Oscillators Pro modes (our own maths from ChartPrime's public docs and guide) ---- */
+  const PRO = {pivot: 5, mindist: 5, maxdist: 35};
+  const std = (x, n) => { const o = NA(x.length);
+    for (let i = n - 1; i < x.length; i++) { let s = 0, ok = true; for (let j = 0; j < n; j++) { if (!fin(x[i-j])) { ok = false; break; } s += x[i-j]; }
+      if (!ok) continue; const m = s / n; let vr = 0; for (let j = 0; j < n; j++) { const dv = x[i-j] - m; vr += dv * dv; } o[i] = Math.sqrt(vr / n); } return o; };
+  const rsiOf = (c, n) => { const g = [NaN], ls = [NaN]; for (let i = 1; i < c.length; i++) { const ch = c[i] - c[i-1]; g.push(Math.max(ch, 0)); ls.push(Math.max(-ch, 0)); }
+    const ag = rma(g, n), al = rma(ls, n); return c.map((_, i) => !(fin(ag[i]) && fin(al[i])) ? NaN : al[i] === 0 ? 100 : 100 - 100 / (1 + ag[i] / al[i])); };
+  const mfiOf = (ap, v, m) => { const o = NA(ap.length); for (let i = m; i < ap.length; i++) { let pos = 0, neg = 0;
+      for (let j = 0; j < m; j++) { const k = i - j, f = ap[k] * v[k]; if (ap[k] > ap[k-1]) pos += f; else if (ap[k] < ap[k-1]) neg += f; }
+      o[i] = neg > 0 ? 100 - 100 / (1 + pos / neg) : pos > 0 ? 100 : 50; } return o; };
+  const stochOf = (h, l, c, n) => { const o = NA(c.length); for (let i = n - 1; i < c.length; i++) { let hh = -Infinity, ll = Infinity;
+      for (let j = 0; j < n; j++) { hh = Math.max(hh, h[i-j]); ll = Math.min(ll, l[i-j]); } o[i] = hh === ll ? 50 : 100 * (c[i] - ll) / (hh - ll); } return o; };
+  const atrOf = (h, l, c, n) => rma(c.map((_, i) => i === 0 ? h[0] - l[0] : Math.max(h[i] - l[i], Math.abs(h[i] - c[i-1]), Math.abs(l[i] - c[i-1]))), n);
+  // divergences on y: 1/-1 regular bull/bear, 2/-2 hidden bull/bear, 3/-3 multiple (chained regular), at the confirming bar
+  function divs(y, h, l, k, minD, maxD) {
+    const n = y.length, div = new Array(n).fill(0), dfrom = NA(n), dto = NA(n), lows = [], highs = []; let bullTo = -1, bearTo = -1;
+    for (let i = 0; i < n; i++) {
+      const j = i - k; let ok = j - k >= 0;
+      for (let q = j - k; ok && q <= i; q++) if (!fin(y[q])) ok = false;
+      if (!ok) continue;
+      const left = y.slice(j - k, j), right = y.slice(j + 1, i + 1);
+      if (y[j] < Math.min(...left) && y[j] <= Math.min(...right)) {
+        const pv = lows.length ? lows[lows.length - 1] : -1;
+        if (pv >= 0 && j - pv >= minD && j - pv <= maxD) {
+          if (l[j] < l[pv] && y[j] > y[pv]) { div[i] = pv === bullTo ? 3 : 1; bullTo = j; }
+          else if (l[j] > l[pv] && y[j] < y[pv]) div[i] = 2;
+          if (div[i]) { dfrom[i] = pv; dto[i] = j; } }
+        lows.push(j); }
+      if (y[j] > Math.max(...left) && y[j] >= Math.max(...right)) {
+        const pv = highs.length ? highs[highs.length - 1] : -1;
+        if (pv >= 0 && j - pv >= minD && j - pv <= maxD && div[i] === 0) {
+          if (h[j] > h[pv] && y[j] < y[pv]) { div[i] = pv === bearTo ? -3 : -1; bearTo = j; }
+          else if (h[j] < h[pv] && y[j] > y[pv]) div[i] = -2;
+          if (div[i]) { dfrom[i] = pv; dto[i] = j; } }
+        highs.push(j); }
+    }
+    return {div, dfrom, dto};
+  }
+  function prime(o, h, l, c, v, params) {       // 0-100 ribbon: mean of RSI, MFI and stochastic, smoothed
+    const p = Object.assign({}, PRO, params || {}), n = c.length, ap = c.map((_, i) => (h[i] + l[i] + c[i]) / 3);
+    const r = rsiOf(c, 14), m = mfiOf(ap, v, 14), s = stochOf(h, l, c, 14);
+    const raw = c.map((_, i) => fin(r[i]) && fin(m[i]) && fin(s[i]) ? (r[i] + m[i] + s[i]) / 3 : NaN);
+    const fast = ema(raw, 5), slow = ema(fast, 5), mid = sma(fast, 20), sd = std(fast, 20);
+    const up = mid.map((x, i) => fin(x) ? x + 2 * sd[i] : NaN), lo = mid.map((x, i) => fin(x) ? x - 2 * sd[i] : NaN);
+    const brk = new Array(n).fill(0), tri = new Array(n).fill(0), obos = new Array(n).fill(0), peak = new Array(n).fill(0);
+    for (let i = 1; i < n; i++) {
+      if ([fast[i], fast[i-1], up[i], up[i-1]].every(fin)) {
+        if (fast[i] > up[i] && fast[i-1] <= up[i-1]) brk[i] = -1; else if (fast[i] < lo[i] && fast[i-1] >= lo[i-1]) brk[i] = 1; }
+      if ([fast[i], fast[i-1], slow[i], slow[i-1]].every(fin)) {
+        if (fast[i-1] <= slow[i-1] && fast[i] > slow[i] && fast[i] < 40) tri[i] = 1;
+        else if (fast[i-1] >= slow[i-1] && fast[i] < slow[i] && fast[i] > 60) tri[i] = -1; }
+      if (fin(fast[i])) obos[i] = fast[i] >= 80 ? -1 : fast[i] <= 20 ? 1 : 0;
+    }
+    const dv = divs(fast, h, l, p.pivot, p.mindist, p.maxdist);
+    for (let i = 0; i < n; i++) { const d = dv.div[i];
+      if ((d === 1 || d === 3) && fast[dv.dto[i]] <= 25) peak[i] = 1; else if ((d === -1 || d === -3) && fast[dv.dto[i]] >= 75) peak[i] = -1; }
+    return {fast, slow, mid, up, lo, brk, tri, obos, div: dv.div, dfrom: dv.dfrom, dto: dv.dto, peak};
+  }
+  function fusion(o, h, l, c, v, params) {      // price-volume wave vs an adaptive (Kaufman) line, MFI behind
+    const p = Object.assign({}, PRO, params || {}), n = c.length, ap = c.map((_, i) => (h[i] + l[i] + c[i]) / 3);
+    const a = atrOf(h, l, c, 21), vw = NA(n);
+    for (let i = 20; i < n; i++) { let s1 = 0, s2 = 0; for (let j = 0; j < 21; j++) { s1 += c[i-j] * v[i-j]; s2 += v[i-j]; } if (s2 > 0) vw[i] = s1 / s2; }
+    const dev = c.map((x, i) => fin(vw[i]) && fin(a[i]) && a[i] > 0 ? (x - vw[i]) / a[i] * 25 : NaN);
+    const wave = ema(dev, 5), kama = NA(n);
+    for (let i = 10; i < n; i++) {
+      if (!fin(wave[i]) || !fin(wave[i-10])) continue;
+      if (!fin(kama[i-1])) { kama[i] = wave[i]; continue; }
+      let vol = 0; for (let j = 0; j < 10; j++) vol += Math.abs(wave[i-j] - wave[i-j-1]);
+      const er = vol > 0 ? Math.abs(wave[i] - wave[i-10]) / vol : 0, sc0 = er * (2 / 3 - 2 / 31) + 2 / 31;
+      kama[i] = kama[i-1] + sc0 * sc0 * (wave[i] - kama[i-1]);
+    }
+    const mfiT = mfiOf(ap, v, 14), mfw = ema(mfiT.map(x => fin(x) ? (x - 50) * 2 : NaN), 3);
+    const trend = c.map((_, i) => fin(wave[i]) && fin(kama[i]) ? (wave[i] > kama[i] ? 1 : -1) : 0);
+    const strong = trend.map((t, i) => t !== 0 && fin(mfw[i]) && (t > 0 ? mfw[i] > 0 : mfw[i] < 0) ? 1 : 0);
+    const m20 = sma(c, 20), s20 = std(c, 20), dot = new Array(n).fill(0), diamond = new Array(n).fill(0), runs = [];
+    let run = 0;
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && trend[i] !== 0 && trend[i] === trend[i-1]) run += 1; else { if (run > 0) runs.push(run); run = trend[i] !== 0 ? 1 : 0; }
+      if (i < 2 || ![wave[i], wave[i-1], wave[i-2], m20[i], s20[i], mfiT[i]].every(fin) || s20[i] === 0) continue;
+      const z = (c[i] - m20[i]) / s20[i], dn = wave[i] < wave[i-1] && wave[i-1] >= wave[i-2], upT = wave[i] > wave[i-1] && wave[i-1] <= wave[i-2];
+      if (dn && z >= 2 && mfiT[i] >= 65) dot[i] = -1;                   // regular bearish
+      else if (upT && z <= -2 && mfiT[i] <= 35) dot[i] = 1;             // regular bullish
+      else if (dn && z >= 1.5) dot[i] = -2;                             // special bearish
+      else if (upT && z <= -1.5) dot[i] = 2;                            // special bullish
+      else if (dn && wave[i] >= 60 && fin(mfw[i]) && fin(mfw[i-1]) && mfw[i] < mfw[i-1]) dot[i] = -3;   // caution bearish
+      if ((dot[i] === 1 || dot[i] === -1) && runs.length >= 5) {       // diamond: regular dot after an unusually long run
+        const last = runs.slice(-20).sort((x, y) => x - y);
+        if (run >= 1.5 * last[Math.floor(last.length / 2)]) diamond[i] = dot[i]; }
+    }
+    const dv = divs(wave, h, l, p.pivot, p.mindist, p.maxdist);
+    return {wave, kama, mfw, trend, strong, dot, diamond, div: dv.div, dfrom: dv.dfrom, dto: dv.dto};
+  }
+  function mvp(o, h, l, c, v) {                 // MACD normalised by its largest size over 100 bars (-100..100)
+    const n = c.length, e12 = ema(c, 12), e26 = ema(c, 26), line = NA(n);
+    const macd = c.map((_, i) => fin(e12[i]) && fin(e26[i]) ? e12[i] - e26[i] : NaN);
+    for (let i = 0; i < n; i++) { if (!fin(macd[i])) continue; let mx = 0, cnt = 0;
+      for (let j = Math.max(0, i - 99); j <= i; j++) if (fin(macd[j])) { mx = Math.max(mx, Math.abs(macd[j])); cnt += 1; }
+      if (cnt >= 50 && mx > 0) line[i] = 100 * macd[i] / mx; }
+    const sig = ema(line, 9), sigs = new Array(n).fill(0);
+    for (let i = 1; i < n; i++) if ([line[i], line[i-1], sig[i], sig[i-1]].every(fin)) {
+      if (line[i-1] <= sig[i-1] && line[i] > sig[i] && line[i] < -40) sigs[i] = 1;
+      else if (line[i-1] >= sig[i-1] && line[i] < sig[i] && line[i] > 40) sigs[i] = -1; }
+    const va = sma(v, 50), relv = v.map((x, i) => fin(va[i]) && va[i] > 0 ? Math.min(3, x / va[i]) : NaN);
+    const m20 = sma(c, 20), s20 = std(c, 20), r = rsiOf(c, 14), bs = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) { if (![m20[i], s20[i], r[i]].every(fin) || s20[i] === 0) continue;
+      const z = (c[i] - m20[i]) / s20[i]; if (z < -1) bs[i] = Math.min(1, (-z - 1) / 1.5) * (r[i] < 40 ? 1 : 0.5); }
+    return {line, sig, sigs, relv, bs};
+  }
+  return {DEFAULTS, PRO, calc, prime, fusion, mvp};
 })();
 /* WLOSC-END */
 const L = (v, color, width = 1.3, dash) => ({v, color, width, dash});
@@ -395,9 +503,16 @@ const INDICATORS = {
     const tp = d.c.map((c, i) => (c+d.h[i]+d.l[i])/3), o = NaNs(tp.length);
     for (let i = p.length; i < tp.length; i++) { let pos = 0, neg = 0; for (let j = 0; j < p.length; j++) { const k = i-j, f = tp[k]*d.v[k]; if (tp[k] > tp[k-1]) pos += f; else if (tp[k] < tp[k-1]) neg += f; } o[i] = neg ? 100 - 100/(1+pos/neg) : 100; }
     return {lines: [L(o, "#66bb6a")], levels: [20, 80], range: [0, 100]}; }},
-  wlosc: {name: "WL Oscillator", params: Object.assign({tips: true, mode: "full", score: 0}, WLOSC.DEFAULTS), tall: 1.8,
-    options: {mode: [["full", "Full oscillator"], ["money", "Money mode"]], score: [[0, "True-7 score off"], [1, "True-7 score on"]]},
-    calc: (d, p) => ({osc: WLOSC.calc(d.o, d.h, d.l, d.c, d.v, p), oscP: p, levels: p.mode === "money" ? [0] : [-p.ob, 0, p.ob], range: [-125, 125]})},
+  wlosc: {name: "WL Oscillator", tall: 1.8,
+    params: Object.assign({tips: true, mode: "prime", bands: true, breaks: true, divs: true, fdivs: false, score: 0}, WLOSC.DEFAULTS, {mindist: 5, maxdist: 35}),
+    options: {mode: [["prime", "Prime Oscillator (Pro)"], ["fusion", "Trend Fusion (Pro)"], ["mvp", "MVP Oscillator (Pro)"],
+                     ["full", "Prime Oscillator+ (Plus)"], ["money", "Money mode (Plus)"]],
+              score: [[0, "True-7 score off"], [1, "True-7 score on"]]},
+    calc: (d, p) => {
+      if (p.mode === "prime") return {pro: WLOSC.prime(d.o, d.h, d.l, d.c, d.v, p), mode: "prime", oscP: p, levels: [50], range: [-8, 108]};
+      if (p.mode === "fusion") return {pro: WLOSC.fusion(d.o, d.h, d.l, d.c, d.v, p), mode: "fusion", oscP: p, levels: [0], range: [-115, 115]};
+      if (p.mode === "mvp") return {pro: WLOSC.mvp(d.o, d.h, d.l, d.c, d.v, p), mode: "mvp", oscP: p, levels: [0], range: [-122, 122]};
+      return {osc: WLOSC.calc(d.o, d.h, d.l, d.c, d.v, p), oscP: p, levels: p.mode === "money" ? [0] : [-p.ob, 0, p.ob], range: [-125, 125]}; }},
   willr: {name: "Williams %R", params: {length: 14}, calc: (d, p) => { const hh = TA.hh(d.h, p.length), ll = TA.ll(d.l, p.length);
     return {lines: [L(d.c.map((c, i) => hh[i] === ll[i] ? -50 : -100*(hh[i]-c)/(hh[i]-ll[i])), "#ec407a")], levels: [-80, -20], range: [-100, 0]}; }},
   roc: {name: "Rate of Change", params: {length: 12}, calc: (d, p) => ({lines: [L(d.c.map((c, i) => i >= p.length ? 100*(c/d.c[i-p.length]-1) : NaN), "#8d6e63")], levels: [0]})},
@@ -426,6 +541,58 @@ const OSC_HELP = {
   seven: ["seven", "teal", "True-7 score (optional)", "All 7 conditions agree (teal 7 = all bullish, pink 7 = all bearish): an extreme that can come before a reversal."],
 };
 const OSC_CONDS = ["price > EMA20", "EMA20 > EMA50", "RSI > 50", "MACD > 0", "line > signal", "MFI > 50", "price > VWAP50"];
+/* Prime Oscillators Pro modes: colours after ChartPrime's screenshots, help in our own words */
+const PRO_C = {mint: "#69f0c0", salmon: "#ff6b6b", obRed: "#9b1111", osGreen: "#0f8a2f", orange: "#ffa726", blue: "#2196f3",
+  green: "#00e676", red: "#ff1744", dkblue: "#3d5afe", purple: "#aa00ff", yellow: "#ffd600", hidBull: "#80cbc4", hidBear: "#ffab91",
+  fgreen: "#13b886", fred: "#e8213a", kama: "#5c6bc0", mvpBlue: "#3d8bfd", mvpPurple: "#9b4dff", gray: "#6b7280"};
+const PRO_DIV_C = {1: PRO_C.green, "-1": PRO_C.red, 2: PRO_C.hidBull, "-2": PRO_C.hidBear, 3: PRO_C.yellow, "-3": PRO_C.yellow};
+const PRO_MAIN = {prime: "fast", fusion: "wave", mvp: "line"};
+const PRO_NAME = {prime: "Prime Oscillator", fusion: "Trend Fusion", mvp: "MVP"};
+const K_ = PRO_C;
+const PRO_DIV_HELP = {
+  1: ["divline", K_.green, "Regular bullish divergence (green line)", "Price made a lower low but the oscillator a higher low: selling is weakening. Drawn once confirmed, a few candles after the low."],
+  "-1": ["divline", K_.red, "Regular bearish divergence (red line)", "Price made a higher high but the oscillator a lower high: buying is weakening."],
+  2: ["divdash", K_.hidBull, "Hidden bullish divergence (dashed)", "Price made a higher low but the oscillator a lower low: often a dip inside an uptrend that may continue up."],
+  "-2": ["divdash", K_.hidBear, "Hidden bearish divergence (dashed)", "Price made a lower high but the oscillator a higher high: often a bounce inside a downtrend."],
+  3: ["divthick", K_.yellow, "Multiple bullish divergence (thick yellow)", "Three or more lows in a row diverging: the strongest kind of divergence."],
+  "-3": ["divthick", K_.yellow, "Multiple bearish divergence (thick yellow)", "Three or more highs in a row diverging: the strongest kind of divergence."],
+};
+const PRO_HELP = {
+  prime: {
+    ribbon: ["line", [K_.mint, K_.salmon], "Ribbon", "Average of RSI, money flow (MFI) and a stochastic, smoothed, on a 0-100 scale. Mint = rising, salmon = falling; above 50 leans bullish, below 50 bearish. A colour flip is a 'ribbon twist'."],
+    macro: ["hband", [K_.obRed, K_.osGreen], "Macro overbought / oversold lines (80 / 20)", "Beyond these lines the market is overextended; signals printed out there carry more weight."],
+    band: ["band", [K_.salmon, K_.mint], "Oscillator band (setting: bands)", "A range around the ribbon (20-candle average +/- 2 standard deviations): red upper half = bearish range, green lower half = bullish range."],
+    brkUp: ["dot", K_.green, "Band break (green dot)", "The ribbon dropped out below its band: a micro oversold point; it tends to come back toward the middle."],
+    brkDn: ["dot", K_.red, "Band break (red dot)", "The ribbon broke out above its band: a micro overbought point."],
+    triUp: ["up", K_.green, "Possible reversal triangle (bullish)", "The ribbon twisted up while low (below 40)."],
+    triDn: ["down", K_.red, "Possible reversal triangle (bearish)", "The ribbon twisted down while high (above 60)."],
+    os: ["sq", K_.orange, "OS boxes", "Ribbon at or below 20: oversold, sellers look exhausted. The longer the row of boxes, the more overextended."],
+    ob: ["sq", K_.orange, "OB boxes", "Ribbon at or above 80: overbought, buyers look exhausted. The longer the row of boxes, the more overextended."],
+    div1: PRO_DIV_HELP[1], divm1: PRO_DIV_HELP[-1], div2: PRO_DIV_HELP[2], divm2: PRO_DIV_HELP[-2], div3: PRO_DIV_HELP[3], divm3: PRO_DIV_HELP[-3],
+    peakUp: ["dot", K_.blue, "Peak seeker (blue dot, below)", "A regular divergence that formed while the ribbon was oversold (25 or lower). The rarest Prime signal."],
+    peakDn: ["dot", K_.blue, "Peak seeker (blue dot, above)", "A regular divergence that formed while the ribbon was overbought (75 or higher). The rarest Prime signal."],
+  },
+  fusion: {
+    wave: ["line", [K_.fgreen, K_.fred], "Fusion wave", "How far price is from its 21-candle volume-weighted average, in ATRs, smoothed. Green = above the adaptive line (uptrend), red = below (downtrend); brighter when money flow agrees."],
+    kama: ["line", [K_.kama, K_.kama], "Adaptive line (thin blue)", "An adaptive (Kaufman) average of the wave; the wave crossing it flips the trend colour."],
+    mfi: ["cloud", [K_.blue, K_.fred], "Money flow (background)", "MFI wave: blue above 0 = money flowing in, red below 0 = flowing out. A wave rounding over at a top or bottom often comes before a reversal."],
+    levels: ["hband", [K_.fred, K_.fgreen], "Upper / lower lines (+60 / -60)", "Extended zones for the wave."],
+    dot1: ["ring", K_.green, "Regular bullish dot", "Price far below its 20-candle average (2+ standard deviations), weak money flow (MFI 35 or lower) and the wave turning up."],
+    dotm1: ["ring", K_.red, "Regular bearish dot", "Price far above its 20-candle average (2+ standard deviations), strong money flow (MFI 65 or higher) and the wave turning down."],
+    dot2: ["ring", K_.dkblue, "Special bullish dot (dark blue)", "Price stretched below its average (1.5+ standard deviations) with the wave turning up. Weaker than regular."],
+    dotm2: ["ring", K_.purple, "Special bearish dot (purple)", "Price stretched above its average (1.5+ standard deviations) with the wave turning down. Weaker than regular."],
+    dotm3: ["ring", K_.yellow, "Caution bearish dot (yellow)", "The wave turned down from high up (+60) while money flow fades: an early warning with lower probability."],
+    dia: ["dia", K_.yellow, "Yellow diamond", "A regular dot after an unusually long trend run (1.5x the typical run): the rarest Fusion signal, aimed at tops and bottoms."],
+    divs: ["divline", K_.green, "Divergences (setting: fdivs, off by default)", "When switched on, lines join diverging wave lows / highs, coloured as in the Prime mode."],
+  },
+  mvp: {
+    ribbon: ["line", [K_.mvpBlue, K_.mvpPurple], "MVP ribbon", "MACD scaled to -100..100 (divided by its largest size over the last 100 candles) with a 9-EMA signal. Blue = above its signal (bullish), purple = below (bearish). Purple below 0 = stronger down move; blue below 0 = indecision."],
+    levels: ["hband", [K_.mvpPurple, K_.mvpBlue], "Overextended lines (+100 / -100)", "Near +100 the move up is stretched, near -100 the move down is stretched; wait for the ribbon to turn back before acting."],
+    bars: ["bars", [K_.gray, "#4caf50"], "Bottom bars", "Grey = volume compared with its 50-candle average. They light up green when price is stretched below its 20-candle average with weak RSI: the bigger and brighter, the more likely a bottom."],
+    buy: ["up", K_.mvpBlue, "Buy arrow", "The ribbon twisted up while low (below -40)."],
+    sell: ["down", K_.mvpPurple, "Sell arrow", "The ribbon twisted down while high (above +40)."],
+  },
+};
 
 /* ============================================================ state */
 const DEFAULT_WAVE = {waves: true, alternates: false, history: true, targets: true, box: true, fibs: true, channels: true, levels: false, pivots: false};
@@ -452,6 +619,9 @@ const S = {
   scanRows: [], scanSort: ["score", -1], tab: store.get("tab", "watch"),
 };
 if (!S.lists[S.list]) S.list = Object.keys(S.lists)[0];
+// one-time: WL Oscillators saved before the Prime Oscillators Pro modes existed open in the Pro "Prime Oscillator" mode
+S.indicators.forEach(x => { if (x.type === "wlosc" && !("bands" in (x.params || {}))) x.params = Object.assign({}, x.params, {mode: "prime", bands: true}); });
+store.set("indicators", S.indicators);
 const saveDrawings = () => store.set("drawings", S.drawings);
 
 /* ============================================================ chart */
@@ -679,13 +849,14 @@ class Chart {
         const y = yf(v); g.fillRect(this.x(i) - w/2, Math.min(y, z), w, Math.max(1, Math.abs(z - y))); } }
     (r.lines || []).forEach(l => this.line(g, l.v, i0, i1, l.color, l.width, l.dash));
     if (r.osc) this.drawOsc(g, D, top, r.osc, yf, i0, i1, r.oscP || {});
+    else if (r.pro) this.drawPro(g, D, top, r, yf, i0, i1);
     g.fillStyle = C.muted; g.font = "11px system-ui"; g.textBaseline = "top"; g.textAlign = "left";
-    const def = INDICATORS[cfg.type], prm = r.osc ? "" : Object.values(Object.assign({}, def.params, cfg.params)).join(", ");
+    const def = INDICATORS[cfg.type], prm = r.osc || r.pro ? "" : Object.values(Object.assign({}, def.params, cfg.params)).join(", ");
     const at = Math.min(this.data.n - 1, Math.round(this.mouse ? this.iAt(this.mouse.x) : this.data.n - 1));
-    const last = (r.osc ? r.osc.wt1 : r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[at];
-    const extra = r.osc && fin(r.osc.bull[at]) ? `  rank ${r.osc.bull[at]}/7  flow ${fin(r.osc.mf[at]) ? r.osc.mf[at].toFixed(0) : "-"}` : "";
+    const last = (r.osc ? r.osc.wt1 : r.pro ? r.pro[PRO_MAIN[r.mode]] : r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[at];
+    const extra = r.pro ? `  ${PRO_NAME[r.mode]}` : r.osc && fin(r.osc.bull[at]) ? `  rank ${r.osc.bull[at]}/7  flow ${fin(r.osc.mf[at]) ? r.osc.mf[at].toFixed(0) : "-"}` : "";
     const label = `${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}${extra}`;
-    if (r.osc) {                                                        // "Tips" tickbox right after the title (title trimmed if tight)
+    if (r.osc || r.pro) {                                               // "Tips" tickbox right after the title (title trimmed if tight)
       const p = r.oscP || {}, on = p.tips !== false, bx0 = Math.min(D.pw - 56, 8 + g.measureText(label).width + 10), bx1 = bx0 + 50, by0 = top + 3, by1 = top + 17;
       g.save(); g.beginPath(); g.rect(0, top, bx0 - 4, 18); g.clip(); g.fillText(label, 8, top + 4); g.restore();
       (this._tipBoxes || (this._tipBoxes = [])).push({x0: bx0, x1: bx1, y0: by0, y1: by1, k: S.indicators.indexOf(cfg)});
@@ -694,7 +865,7 @@ class Chart {
       g.textBaseline = "middle"; g.fillText("Tips", bx0 + 16, by0 + 7.5);
       const m = this.mouse;
       if (on && m && m.y > top && m.y < top + D.subH && m.x < D.pw && !(m.x >= bx0 - 2 && m.x <= bx1 + 2 && m.y <= by1 + 2))
-        this._oscTip = {o: r.osc, p, top, legend: m.y < top + 18, i: Math.max(0, Math.min(this.data.n - 1, Math.round(this.iAt(m.x))))};
+        this._oscTip = {o: r.osc, pro: r.pro ? r : null, p, top, legend: m.y < top + 18, i: Math.max(0, Math.min(this.data.n - 1, Math.round(this.iAt(m.x))))};
     } else g.fillText(label, 8, top + 4);
     g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = C.muted;
     [hi, lo].forEach(v => g.fillText(Math.abs(v) >= 1e5 ? fmtVol(v) : v.toFixed(Math.abs(v) < 10 ? 2 : 0), D.pw + 6, yf(v)));
@@ -753,12 +924,82 @@ class Chart {
       if (p.score && fin(b) && (b === 7 || b === 0) && b !== pb) { g.fillStyle = b === 7 ? TEAL : PINK; g.fillText("7", x, top + 52); }
     }
   }
+  drawPro(g, D, top, r, yf, i0, i1) {
+    const o = r.pro, p = r.oscP || {}, K = PRO_C, bot = top + D.subH, w = this.barW, main = o[PRO_MAIN[r.mode]];
+    const lo = Math.max(1, i0), hi = Math.min(main.length - 1, i1);
+    if (hi <= lo) return;
+    const quad = (a0, a1, b1, b0, i) => { g.beginPath(); g.moveTo(this.x(i - 1), yf(a0)); g.lineTo(this.x(i), yf(a1)); g.lineTo(this.x(i), yf(b1)); g.lineTo(this.x(i - 1), yf(b0)); g.closePath(); g.fill(); };
+    const ribbon = (a, b, cUp, cDn, alpha) => { for (let i = lo; i <= hi; i++) { if (![a[i], a[i-1], b[i], b[i-1]].every(fin)) continue;
+      g.fillStyle = (a[i] >= b[i] ? cUp : cDn) + alpha; quad(a[i-1], a[i], b[i], b[i-1], i); } };
+    const edge = (a, colOf, width) => { g.lineWidth = width; for (let i = lo; i <= hi; i++) { if (!fin(a[i]) || !fin(a[i-1])) continue;
+      g.strokeStyle = colOf(i); g.beginPath(); g.moveTo(this.x(i - 1), yf(a[i-1])); g.lineTo(this.x(i), yf(a[i])); g.stroke(); } };
+    const hbar = (v, col, h, glow) => { g.save(); if (glow) { g.shadowColor = col; g.shadowBlur = 10; } g.fillStyle = col; g.fillRect(0, yf(v) - h / 2, D.pw, h); g.restore(); };
+    const tri = (x, y, up, col, s = 4) => { g.fillStyle = col; g.beginPath(); g.moveTo(x, up ? y - s : y + s);
+      g.lineTo(x - s, up ? y + s * 0.8 : y - s * 0.8); g.lineTo(x + s, up ? y + s * 0.8 : y - s * 0.8); g.closePath(); g.fill(); };
+    const dot = (x, y, col, rr = 3) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, rr, 0, 7); g.fill(); };
+    const divLines = y => { for (let i = lo; i <= hi; i++) { const d = o.div[i]; if (!d || !fin(o.dfrom[i])) continue;
+        const a = o.dfrom[i], b = o.dto[i]; g.strokeStyle = PRO_DIV_C[d]; g.lineWidth = Math.abs(d) === 3 ? 2.2 : 1.4; g.setLineDash(Math.abs(d) === 2 ? [4, 3] : []);
+        g.beginPath(); g.moveTo(this.x(a), yf(y[a])); g.lineTo(this.x(b), yf(y[b])); g.stroke(); }
+      g.setLineDash([]); };
+    if (r.mode === "prime") {
+      if (p.bands !== false) for (let i = lo; i <= hi; i++) { if (![o.up[i], o.up[i-1], o.mid[i], o.mid[i-1]].every(fin)) continue;
+        g.fillStyle = K.salmon + "1f"; quad(o.up[i-1], o.up[i], o.mid[i], o.mid[i-1], i);
+        g.fillStyle = K.mint + "1f"; quad(o.mid[i-1], o.mid[i], o.lo[i], o.lo[i-1], i); }
+      hbar(80, K.obRed, 4); hbar(20, K.osGreen, 4);
+      ribbon(o.fast, o.slow, K.mint, K.salmon, "e6");
+      edge(o.fast, i => o.fast[i] >= o.slow[i] ? K.mint : K.salmon, 1.3);
+      if (p.divs !== false) divLines(o.fast);
+      const yOB = yf(80), yOS = yf(20), bw = Math.max(2, Math.min(6, w * 0.8));
+      g.font = "bold 9px system-ui"; g.textBaseline = "middle"; g.textAlign = "left";
+      for (let i = lo; i <= hi; i++) { const x = this.x(i);
+        if (p.breaks !== false && o.brk[i] && fin(o.fast[i])) dot(x, yf(o.fast[i]), o.brk[i] > 0 ? K.green : K.red, 2.8);
+        if (o.obos[i]) { const ob = o.obos[i] < 0; g.fillStyle = K.orange; g.fillRect(x - bw / 2, ob ? yOB - 9 : yOS + 6, Math.max(1, bw - 1), 3);
+          if (o.obos[i + 1] !== o.obos[i]) g.fillText(ob ? "OB" : "OS", x + bw, ob ? yOB - 8 : yOS + 8); }
+        if (o.tri[i]) tri(x, o.tri[i] > 0 ? yOS + 17 : yOB - 17, o.tri[i] > 0, o.tri[i] > 0 ? K.green : K.red);
+        if (o.peak[i]) dot(x, o.peak[i] > 0 ? yOS + 26 : yOB - 26, K.blue, 3.2);
+      }
+    } else if (r.mode === "fusion") {
+      const z = yf(0), cloud = (sel, col, edgeV) => { g.beginPath(); g.moveTo(this.x(lo), z);
+        for (let i = lo; i <= hi; i++) g.lineTo(this.x(i), yf(fin(o.mfw[i]) ? sel(Math.max(-100, Math.min(100, o.mfw[i])), 0) : 0));
+        g.lineTo(this.x(hi), z); g.closePath(); const gr = g.createLinearGradient(0, yf(edgeV), 0, z); gr.addColorStop(0, col + "55"); gr.addColorStop(1, col + "08"); g.fillStyle = gr; g.fill(); };
+      cloud(Math.max, K.blue, 100); cloud(Math.min, K.fred, -100);
+      hbar(60, K.fred, 1.2); hbar(-60, K.fgreen, 1.2);
+      for (let i = lo; i <= hi; i++) { if (![o.wave[i], o.wave[i-1], o.kama[i], o.kama[i-1]].every(fin)) continue;   // gradient columns wave -> adaptive line
+        const col = o.trend[i] > 0 ? K.fgreen : K.fred, gr = g.createLinearGradient(0, yf(o.wave[i]), 0, yf(o.kama[i]));
+        gr.addColorStop(0, col + (o.strong[i] ? "ee" : "88")); gr.addColorStop(1, col + "14"); g.fillStyle = gr; quad(o.wave[i-1], o.wave[i], o.kama[i], o.kama[i-1], i); }
+      edge(o.kama, () => K.kama, 1);
+      edge(o.wave, i => o.trend[i] > 0 ? K.fgreen : K.fred, 1.4);
+      if (p.fdivs) divLines(o.wave);
+      const DOT = {1: K.green, "-1": K.red, 2: K.dkblue, "-2": K.purple, "-3": K.yellow};
+      for (let i = lo; i <= hi; i++) { const x = this.x(i), d = o.dot[i];
+        if (d) { const y = d > 0 ? yf(-60) + 11 : yf(60) - 11; g.strokeStyle = DOT[d]; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.stroke(); dot(x, y, DOT[d], 2); }
+        if (o.diamond[i]) { const y = o.diamond[i] > 0 ? yf(-60) + 24 : yf(60) - 24; g.fillStyle = K.yellow; g.strokeStyle = "#ffffff"; g.lineWidth = 1;
+          g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 4.5, y); g.lineTo(x, y + 6); g.lineTo(x - 4.5, y); g.closePath(); g.fill(); g.stroke(); }
+      }
+    } else if (r.mode === "mvp") {
+      hbar(100, K.mvpPurple, 2, true); hbar(-100, K.mvpBlue, 2, true);
+      const bh = D.subH * 0.22, base = yf(-100) - 2;
+      for (let i = lo; i <= hi; i++) { const rv = o.relv[i]; if (!fin(rv)) continue; const hgt = Math.max(1, rv / 3 * bh);   // bottom bars
+        g.fillStyle = K.gray + "55"; g.fillRect(this.x(i) - w * 0.4, base - hgt, Math.max(1, w * 0.8), hgt);
+        if (o.bs[i] > 0.25) { g.globalAlpha = 0.3 + 0.7 * o.bs[i]; g.fillStyle = "#4caf50"; g.fillRect(this.x(i) - w * 0.4, base - hgt, Math.max(1, w * 0.8), hgt); g.globalAlpha = 1; } }
+      ribbon(o.line, o.sig, K.mvpBlue, K.mvpPurple, "cc");
+      edge(o.sig, () => "#dbe4ffaa", 1);
+      edge(o.line, i => o.line[i] >= o.sig[i] ? K.mvpBlue : K.mvpPurple, 1.4);
+      for (let i = lo; i <= hi; i++) if (o.sigs[i]) tri(this.x(i), o.sigs[i] > 0 ? yf(-100) + 11 : yf(100) - 11, o.sigs[i] > 0, o.sigs[i] > 0 ? K.mvpBlue : K.mvpPurple, 5);
+    }
+  }
   drawOscGlyph(g, kind, col, x, y) {
-    const c = OSC_C[col] || col, T = OSC_C.teal, P = OSC_C.pink;
+    const pair = Array.isArray(col), c = pair ? col[0] : OSC_C[col] || col, T = pair ? col[0] : OSC_C.teal, P = pair ? col[1] : OSC_C.pink;
     g.save();
     if (kind === "line") { g.lineWidth = 2.2; g.strokeStyle = T; g.beginPath(); g.moveTo(x - 7, y + 3); g.lineTo(x, y - 2); g.stroke();
       g.strokeStyle = P; g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x + 7, y + 3); g.stroke(); }
     else if (kind === "cloud") { g.fillStyle = T + "aa"; g.fillRect(x - 7, y - 5, 7, 5); g.fillStyle = P + "aa"; g.fillRect(x, y, 7, 5); }
+    else if (kind === "hband") { g.fillStyle = T; g.fillRect(x - 8, y - 4, 16, 3); g.fillStyle = P; g.fillRect(x - 8, y + 2, 16, 3); }
+    else if (kind === "band") { g.fillStyle = T + "55"; g.fillRect(x - 8, y - 5, 16, 5); g.fillStyle = P + "55"; g.fillRect(x - 8, y, 16, 5); }
+    else if (kind === "ring") { g.strokeStyle = c; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.stroke(); g.fillStyle = c; g.beginPath(); g.arc(x, y, 2, 0, 7); g.fill(); }
+    else if (kind === "divline" || kind === "divdash" || kind === "divthick") { g.strokeStyle = c; g.lineWidth = kind === "divthick" ? 2.4 : 1.5;
+      g.setLineDash(kind === "divdash" ? [4, 3] : []); g.beginPath(); g.moveTo(x - 8, y + 4); g.lineTo(x + 8, y - 3); g.stroke(); }
+    else if (kind === "bars") { [[-6, 5], [-2, 8], [2, 6], [6, 9]].forEach(([dx, hh], k) => { g.fillStyle = k < 2 ? T + "aa" : P; g.fillRect(x + dx - 1.5, y + 5 - hh, 3, hh); }); }
     else if (kind === "dot") { g.fillStyle = c; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); }
     else if (kind === "div") { g.strokeStyle = c; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x - 7, y + 4); g.lineTo(x + 2, y); g.stroke();
       g.fillStyle = OSC_C.blue; g.beginPath(); g.arc(x + 5, y - 4, 2.5, 0, 7); g.fill(); }
@@ -782,7 +1023,44 @@ class Chart {
     const top = [], items = [], foot = [];
     const item = key => { const [glyph, col, title, text] = OSC_HELP[key]; items.push({glyph, col, title, lines: wrap(text, colW - 2 * pad - gx)}); };
     const f = (v, d = 1) => fin(v) ? v.toFixed(d) : "-";
-    if (T.legend) {
+    if (T.pro) {
+      const o = T.pro.pro, mode = T.pro.mode, HP = PRO_HELP[mode], name = PRO_NAME[mode];
+      const pitem = e => items.push({glyph: e[0], col: e[1], title: e[2], lines: wrap(e[3], colW - 2 * pad - gx)});
+      if (T.legend) {
+        top.push({head: true, lines: [`WL Oscillator · ${name} mode: what each mark means`]});
+        Object.values(HP).forEach(pitem);
+        foot.push({dim: true, lines: wrap("Our own build from ChartPrime's public Prime Oscillators Pro docs and guide video, not their code. Switch modes under Indicators. Untick Tips to hide.", W - 2 * pad)});
+      } else {
+        top.push({head: true, lines: [`${fmtTime(this.data.t[i], this.interval, true)} · WL Oscillator · ${name}`]});
+        const near = this.barW < 8 ? [i, i - 1, i + 1] : [i], hasv = (arr, v) => near.some(j => arr[j] === v);
+        const first = arr => { for (const j of near) if (arr[j]) return arr[j]; return 0; };
+        if (mode === "prime") {
+          const zone = o.fast[i] >= 80 ? " · overbought" : o.fast[i] <= 20 ? " · oversold" : "";
+          top.push({lines: wrap(`Ribbon ${f(o.fast[i])} (slow ${f(o.slow[i])}): ${o.fast[i] >= o.slow[i] ? "mint, rising" : "salmon, falling"} · ${o.fast[i] >= 50 ? "above" : "below"} 50${zone}${fin(o.up[i]) ? ` · band ${f(o.lo[i])} to ${f(o.up[i])}` : ""}`, W - 2 * pad)});
+          if (hasv(o.brk, 1)) pitem(HP.brkUp);
+          if (hasv(o.brk, -1)) pitem(HP.brkDn);
+          if (hasv(o.tri, 1)) pitem(HP.triUp);
+          if (hasv(o.tri, -1)) pitem(HP.triDn);
+          if (o.obos[i] === 1) pitem(HP.os);
+          if (o.obos[i] === -1) pitem(HP.ob);
+          const d = first(o.div); if (d && p.divs !== false) pitem(PRO_DIV_HELP[d]);
+          if (hasv(o.peak, 1)) pitem(HP.peakUp);
+          if (hasv(o.peak, -1)) pitem(HP.peakDn);
+        } else if (mode === "fusion") {
+          top.push({lines: wrap(`Wave ${f(o.wave[i])} vs adaptive line ${f(o.kama[i])}: ${o.trend[i] > 0 ? "uptrend (green)" : "downtrend (red)"}${o.strong[i] ? ", money flow agrees (bright)" : ""} · money flow ${f(o.mfw[i], 0)} (${o.mfw[i] >= 0 ? "flowing in" : "flowing out"})`, W - 2 * pad)});
+          const key = {1: "dot1", "-1": "dotm1", 2: "dot2", "-2": "dotm2", "-3": "dotm3"}[first(o.dot)]; if (key) pitem(HP[key]);
+          if (first(o.diamond)) pitem(HP.dia);
+          const d = first(o.div); if (d && p.fdivs) pitem(PRO_DIV_HELP[d]);
+        } else {
+          top.push({lines: wrap(`MVP ${f(o.line[i])} vs signal ${f(o.sig[i])}: ${o.line[i] >= o.sig[i] ? "blue, bullish" : "purple, bearish"} · ${o.line[i] >= 0 ? "above" : "below"} 0 · volume ${f(o.relv[i], 2)}x average${o.bs[i] > 0.25 ? ` · bottom bars lit ${f(o.bs[i] * 100, 0)}%` : ""}`, W - 2 * pad)});
+          if (hasv(o.sigs, 1)) pitem(HP.buy);
+          if (hasv(o.sigs, -1)) pitem(HP.sell);
+          if (o.bs[i] > 0.25) pitem(HP.bars);
+        }
+        if (!items.length) foot.push({dim: true, lines: ["No signal marks on this candle."]});
+        foot.push({dim: true, lines: wrap("Hover the title line for the full key · untick Tips to hide.", W - 2 * pad)});
+      }
+    } else if (T.legend) {
       top.push({head: true, lines: ["WL Oscillator: what each mark means"]});
       Object.keys(OSC_HELP).forEach(item);
       foot.push({dim: true, lines: wrap("Our own build from ChartPrime's public description and docs, not their code. Hover a candle for its marks; untick Tips to hide.", W - 2 * pad)});

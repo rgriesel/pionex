@@ -261,6 +261,13 @@ def run(paths) -> dict:
         report["trend"] = trend_forward()
     except Exception as exc:  # noqa: BLE001 - a feed hiccup must not lose the rest of the scorecard
         report["trend"] = {"error": str(exc)}
+    try:                                                                  # CTA trend basket, paper only
+        from .swing_book import run as swing_run
+        st = swing_run(paths)
+        report["swing_book"] = {k: st.get(k) for k in ("start", "equity", "next_targets", "signals", "updated")}
+        report["swing_book"]["last_days"] = st.get("history", [])[-5:]
+    except Exception as exc:  # noqa: BLE001
+        report["swing_book"] = {"error": str(exc)}
     dst = paths.reports / "btc_guidance.json"
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(report, indent=2), encoding="utf-8", newline="\n")

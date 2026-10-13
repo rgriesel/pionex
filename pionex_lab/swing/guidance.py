@@ -176,7 +176,7 @@ def fetch_bars(client=None, since_ms: int = 0) -> list[tuple]:
                 raise
             break                                                    # past the venue's history limit
         for k in kl:
-            bars[k.open_time] = (k.open_time, float(k.open), float(k.high), float(k.low), float(k.close))
+            bars[k.open_time] = (k.open_time, float(k.open), float(k.high), float(k.low), float(k.close), float(k.volume))
         first = min((k.open_time for k in kl), default=None)
         if first is None or first <= since_ms or (end is not None and first > end):
             break
@@ -185,17 +185,46 @@ def fetch_bars(client=None, since_ms: int = 0) -> list[tuple]:
     return sorted(b for t, b in bars.items() if t + H <= now)        # closed candles only
 
 
+def oscillator_forward(bars: list[tuple]) -> dict:
+    """WL Oscillator diamonds on Pionex BTC 4h that close after FORWARD_START, traded with the v2 rules
+    (swing/osc_study.py: stop beyond 5 bars, half at 1.5R then stop to entry, rest at 3R or 30 bars).
+    The backtest had only 20 such BTC 4h trades, so they are tracked forward from 2026-10-13. No funding."""
+    from ..data.store import Bars, resample
+    from ..waves.oscillator import calc
+    from .osc_study import simulate_v2
+    if len(bars) < 500:
+        return {"diamonds": [], "trades": []}
+    b1 = Bars("BTC_USDT", "60M", *[list(x) for x in zip(*bars)])
+    b4 = resample(b1, "4H")
+    r = calc(list(b4.o), list(b4.h), list(b4.l), list(b4.c), list(b4.v))
+    start = _ms(FORWARD_START)
+    marks = [{"bar_close": _iso(b4.t[i] + 4 * H), "side": "LONG" if r["diamond"][i] > 0 else "SHORT"}
+             for i in range(len(b4)) if r["diamond"][i] and b4.t[i] + 4 * H > start]
+    keep = {k: [x if b4.t[i] + 4 * H > start else 0 for i, x in enumerate(v)] if k == "diamond" else v for k, v in r.items()}
+    last = b1.t[-1] + H
+    trades = [{**t, "entry": _iso(t["entry_time"]), "exit": _iso(t["exit_time"]),
+               "status": "running" if t["exit_time"] >= last and t["entry_time"] + 30 * 4 * H > last else "closed"}
+              for t in simulate_v2(b4, b1, keep, "diamond")]
+    return {"diamonds": marks, "trades": trades, "summary": summarize_trades([t for t in trades if t["status"] == "closed"])}
+
+
+def summarize_trades(trades: list[dict]) -> dict:
+    vals = [t["net_bps"] for t in trades]
+    return {"n": len(vals), "mean_net_bps": round(sum(vals) / len(vals), 1) if vals else None,
+            "win_rate": round(sum(v > 0 for v in vals) / len(vals), 2) if vals else None}
+
+
 def run(paths) -> dict:
     calls = load(paths.root / "guidance" / "btc_calls.jsonl")
-    since = min((_ms(c["recorded"]) for c in calls), default=0)
-    bars = fetch_bars(since_ms=since) if calls else []
+    since = min([_ms(c["recorded"]) for c in calls] + [_ms(FORWARD_START)]) - 120 * 24 * H   # oscillator warm-up
+    bars = fetch_bars(since_ms=since)
     scored = [score_call(c, bars) for c in calls]
     report = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "venue": "Pionex BTC_USDT 1h", "forward_start": FORWARD_START,
               "note": ("Forward-only guidance scorecard, not evidence of profitability. "
                        "Daily Entry and Chart Hackers are the same presenter, so they are not "
                        "independent. Judge nothing before ~30 scored calls per channel."),
-              "summary": summarize(scored), "calls": scored}
+              "summary": summarize(scored), "calls": scored, "oscillator": oscillator_forward(bars)}
     dst = paths.reports / "btc_guidance.json"
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(report, indent=2), encoding="utf-8", newline="\n")

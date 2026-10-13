@@ -70,5 +70,23 @@ class Scoring(unittest.TestCase):
         self.assertNotIn("bias_24h_net_bps", s)
 
 
+class OscillatorForward(unittest.TestCase):
+    def test_only_diamonds_after_the_start_are_tracked(self):
+        import random
+        from tests.helpers import random_walk
+        start = g._ms("2026-08-01T00:00:00+00:00")
+        rng, prev, rows = random.Random(4), None, []
+        for i, c in enumerate(random_walk(2400, 80000.0, 0.008, seed=4)):
+            o = prev or c
+            rows.append((start + i * H, o, max(o, c) * 1.002, min(o, c) * 0.998, c, rng.uniform(50, 500)))
+            prev = c
+        out = g.oscillator_forward(rows)
+        fwd = g._ms(g.FORWARD_START)
+        self.assertTrue(all(g._ms(d["bar_close"]) > fwd for d in out["diamonds"]))
+        self.assertTrue(all(t["entry_time"] > fwd and t["status"] in ("closed", "running") for t in out["trades"]))
+        self.assertEqual(out["summary"]["n"], sum(t["status"] == "closed" for t in out["trades"]))
+        self.assertEqual(g.oscillator_forward(rows[:100])["trades"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

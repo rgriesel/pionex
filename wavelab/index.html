@@ -235,6 +235,90 @@ const TA = {
     const ag = TA.rma(g.slice(1), n), al = TA.rma(l.slice(1), n); return [NaN, ...ag.map((v, i) => al[i] === 0 ? 100 : 100 - 100/(1+v/al[i]))]; },
   sub(a, b) { return a.map((v, i) => v - b[i]); },
 };
+/* WLOSC-BEGIN: our own Prime-style oscillator; mirror of pionex_lab/waves/oscillator.py (parity-tested) */
+const WLOSC = (() => {
+  const fin = x => typeof x === "number" && isFinite(x), NA = n => new Array(n).fill(NaN);
+  const DEFAULTS = {n1: 10, n2: 21, mfi: 14, mfs: 5, ob: 53, pivot: 5, lookback: 60, vwap: 50};
+  const ema = (x, n) => { const o = NA(x.length), a = 2 / (n + 1); let p = NaN, s = 0, c = 0;
+    for (let i = 0; i < x.length; i++) { const v = x[i]; if (!fin(v)) continue;
+      if (!fin(p)) { s += v; c++; if (c === n) { p = s / n; o[i] = p; } } else { p = v * a + p * (1 - a); o[i] = p; } } return o; };
+  const rma = (x, n) => { const o = NA(x.length); let p = NaN, s = 0, c = 0;
+    for (let i = 0; i < x.length; i++) { const v = x[i]; if (!fin(v)) continue;
+      if (!fin(p)) { s += v; c++; if (c === n) { p = s / n; o[i] = p; } } else { p = (p * (n - 1) + v) / n; o[i] = p; } } return o; };
+  const sma = (x, n) => { const o = NA(x.length);
+    for (let i = n - 1; i < x.length; i++) { let s = 0, ok = true; for (let j = 0; j < n; j++) { if (!fin(x[i-j])) { ok = false; break; } s += x[i-j]; } if (ok) o[i] = s / n; } return o; };
+  function calc(o, h, l, c, v, params) {
+    const p = Object.assign({}, DEFAULTS, params || {}), n = c.length;
+    const ap = c.map((_, i) => (h[i] + l[i] + c[i]) / 3), esa = ema(ap, p.n1);
+    const dd = ema(ap.map((x, i) => fin(esa[i]) ? Math.abs(x - esa[i]) : NaN), p.n1);
+    const ci = ap.map((x, i) => !fin(dd[i]) ? NaN : dd[i] > 0 ? (x - esa[i]) / (0.015 * dd[i]) : 0);
+    const wt1 = ema(ci, p.n2), wt2 = sma(wt1, 4), m = p.mfi, mfi = NA(n);
+    for (let i = m; i < n; i++) { let pos = 0, neg = 0;
+      for (let j = 0; j < m; j++) { const k = i - j, f = ap[k] * v[k]; if (ap[k] > ap[k-1]) pos += f; else if (ap[k] < ap[k-1]) neg += f; }
+      mfi[i] = neg > 0 ? 100 - 100 / (1 + pos / neg) : pos > 0 ? 100 : 50; }
+    const mf = ema(mfi.map(x => fin(x) ? (x - 50) * 2 : NaN), p.mfs);
+    const gains = [NaN], losses = [NaN];
+    for (let i = 1; i < n; i++) { const ch = c[i] - c[i-1]; gains.push(Math.max(ch, 0)); losses.push(Math.max(-ch, 0)); }
+    const ag = rma(gains, 14), al = rma(losses, 14);
+    const rsi = c.map((_, i) => !(fin(ag[i]) && fin(al[i])) ? NaN : al[i] === 0 ? 100 : 100 - 100 / (1 + ag[i] / al[i]));
+    const e12 = ema(c, 12), e26 = ema(c, 26), e20 = ema(c, 20), e50 = ema(c, 50);
+    const macd = c.map((_, i) => fin(e12[i]) && fin(e26[i]) ? e12[i] - e26[i] : NaN), sig = ema(macd, 9);
+    const hist = macd.map((x, i) => fin(sig[i]) ? x - sig[i] : NaN);
+    const w = p.vwap, vwap = NA(n), sd = NA(n);
+    for (let i = w - 1; i < n; i++) { let s1 = 0, s2 = 0, s3 = 0;
+      for (let j = 0; j < w; j++) { const k = i - j; s1 += ap[k] * v[k]; s2 += v[k]; s3 += c[k]; }
+      if (s2 > 0) vwap[i] = s1 / s2;
+      const mean = s3 / w; let vr = 0; for (let j = 0; j < w; j++) { const dv = c[i-j] - mean; vr += dv * dv; } sd[i] = Math.sqrt(vr / w); }
+    const sv = c.map((x, i) => x > o[i] ? v[i] : x < o[i] ? -v[i] : 0), es = ema(sv, 10), ev = ema(v, 10);
+    const vm = c.map((_, i) => fin(es[i]) && fin(ev[i]) && ev[i] > 0 ? es[i] / ev[i] : NaN);
+    const bull = NA(n), rev = new Array(n).fill(0), div = new Array(n).fill(0), fair = new Array(n).fill(0);
+    const dfrom = NA(n), dto = NA(n), trend = new Array(n).fill(0), mfdiv = new Array(n).fill(0), diamond = new Array(n).fill(0);
+    const ob = p.ob, k = p.pivot, lows = [], highs = [], mlows = [], mhighs = []; let state = 0;
+    for (let i = 0; i < n; i++) {
+      if ([e20[i], e50[i], rsi[i], hist[i], wt1[i], wt2[i], mfi[i], vwap[i]].every(fin))
+        bull[i] = (c[i] > e20[i]) + (e20[i] > e50[i]) + (rsi[i] > 50) + (hist[i] > 0) + (wt1[i] > wt2[i]) + (mfi[i] > 50) + (c[i] > vwap[i]);
+      if (i >= 1 && [wt1[i-1], wt2[i-1], wt1[i], wt2[i]].every(fin)) {
+        if (wt1[i-1] <= wt2[i-1] && wt1[i] > wt2[i] && wt1[i] < -ob) rev[i] = 1;
+        else if (wt1[i-1] >= wt2[i-1] && wt1[i] < wt2[i] && wt1[i] > ob) rev[i] = -1; }
+      if (fin(vwap[i]) && sd[i] > 0) fair[i] = c[i] < vwap[i] - 2 * sd[i] ? 1 : c[i] > vwap[i] + 2 * sd[i] ? -1 : 0;
+      const j = i - k; let ok = j - k >= 0;
+      for (let q = j - k; ok && q <= i; q++) if (!fin(wt1[q])) ok = false;
+      if (ok) {
+        const left = wt1.slice(j - k, j), right = wt1.slice(j + 1, i + 1);
+        if (wt1[j] < Math.min(...left) && wt1[j] <= Math.min(...right)) {
+          const pr = lows[lows.length - 1];
+          if (pr && j - pr[0] <= p.lookback && l[j] < pr[2] && wt1[j] > pr[1] && wt1[j] < 0) { div[i] = 1; dfrom[i] = pr[0]; dto[i] = j; }
+          lows.push([j, wt1[j], l[j]]); }
+        if (wt1[j] > Math.max(...left) && wt1[j] >= Math.max(...right)) {
+          const pr = highs[highs.length - 1];
+          if (pr && j - pr[0] <= p.lookback && h[j] > pr[2] && wt1[j] < pr[1] && wt1[j] > 0 && div[i] === 0) { div[i] = -1; dfrom[i] = pr[0]; dto[i] = j; }
+          highs.push([j, wt1[j], h[j]]); }
+      }
+      let okm = j - k >= 0;
+      for (let q = j - k; okm && q <= i; q++) if (!fin(mf[q])) okm = false;
+      if (okm) {                                                        // money flow weakening vs price
+        const left = mf.slice(j - k, j), right = mf.slice(j + 1, i + 1);
+        if (mf[j] > Math.max(...left) && mf[j] >= Math.max(...right)) {
+          const pr = mhighs[mhighs.length - 1];
+          if (pr && j - pr[0] <= p.lookback && mf[j] > 0 && mf[j] < pr[1] && h[j] > pr[2]) mfdiv[i] = -1;
+          mhighs.push([j, mf[j], h[j]]); }
+        if (mf[j] < Math.min(...left) && mf[j] <= Math.min(...right)) {
+          const pr = mlows[mlows.length - 1];
+          if (pr && j - pr[0] <= p.lookback && mf[j] < 0 && mf[j] > pr[1] && l[j] < pr[2] && mfdiv[i] === 0) mfdiv[i] = 1;
+          mlows.push([j, mf[j], l[j]]); }
+      }
+      if (fin(bull[i])) {                                               // trend arrows: rank reaches the opposite extreme
+        if (bull[i] >= 6 && state !== 1) { trend[i] = 1; state = 1; }
+        else if (bull[i] <= 1 && state !== -1) { trend[i] = -1; state = -1; } }
+      const win = (a, s, to) => { for (let q = Math.max(0, i - 5); q <= to; q++) if (a[q] === s) return true; return false; };
+      for (const s of [1, -1])                                          // diamond shift: momentum dot + divergence within 6 bars
+        if (((rev[i] === s && win(div, s, i)) || (div[i] === s && win(rev, s, i))) && !win(diamond, s, i - 1)) { diamond[i] = s; break; }
+    }
+    return {wt1, wt2, mf, mfi, vm, bull, rev, div, dfrom, dto, fair, trend, mfdiv, diamond};
+  }
+  return {DEFAULTS, calc};
+})();
+/* WLOSC-END */
 const L = (v, color, width = 1.3, dash) => ({v, color, width, dash});
 const INDICATORS = {
   liqmap: {name: "Liquidation heatmap (estimated)", overlay: true, heat: true,
@@ -309,6 +393,9 @@ const INDICATORS = {
     const tp = d.c.map((c, i) => (c+d.h[i]+d.l[i])/3), o = NaNs(tp.length);
     for (let i = p.length; i < tp.length; i++) { let pos = 0, neg = 0; for (let j = 0; j < p.length; j++) { const k = i-j, f = tp[k]*d.v[k]; if (tp[k] > tp[k-1]) pos += f; else if (tp[k] < tp[k-1]) neg += f; } o[i] = neg ? 100 - 100/(1+pos/neg) : 100; }
     return {lines: [L(o, "#66bb6a")], levels: [20, 80], range: [0, 100]}; }},
+  wlosc: {name: "WL Oscillator", params: Object.assign({mode: "full", score: 0}, WLOSC.DEFAULTS), tall: 1.8,
+    options: {mode: [["full", "Full oscillator"], ["money", "Money mode"]], score: [[0, "True-7 score off"], [1, "True-7 score on"]]},
+    calc: (d, p) => ({osc: WLOSC.calc(d.o, d.h, d.l, d.c, d.v, p), oscP: p, levels: p.mode === "money" ? [0] : [-p.ob, 0, p.ob], range: [-125, 125]})},
   willr: {name: "Williams %R", params: {length: 14}, calc: (d, p) => { const hh = TA.hh(d.h, p.length), ll = TA.ll(d.l, p.length);
     return {lines: [L(d.c.map((c, i) => hh[i] === ll[i] ? -50 : -100*(hh[i]-c)/(hh[i]-ll[i])), "#ec407a")], levels: [-80, -20], range: [-100, 0]}; }},
   roc: {name: "Rate of Change", params: {length: 12}, calc: (d, p) => ({lines: [L(d.c.map((c, i) => i >= p.length ? 100*(c/d.c[i-p.length]-1) : NaN), "#8d6e63")], levels: [0]})},
@@ -397,9 +484,10 @@ class Chart {
   dims() {
     const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
     const subs = S.indicators.filter(x => INDICATORS[x.type] && !INDICATORS[x.type].overlay);
-    const subH = subs.length ? Math.max(36, Math.min(110, (H - TIME_H) * 0.17, (H - TIME_H) * 0.5 / subs.length)) : 0;
-    const mainH = Math.max(80, H - TIME_H - subH * subs.length);
-    return {W, H, pw: W - AXIS_W, mainH, subH, subs};
+    const wts = subs.map(x => INDICATORS[x.type].tall || 1), tw = wts.reduce((a, b) => a + b, 0);
+    const subH = subs.length ? Math.max(36, Math.min(110, (H - TIME_H) * 0.17, (H - TIME_H) * 0.5 / tw)) : 0;
+    const mainH = Math.max(80, H - TIME_H - subH * tw);
+    return {W, H, pw: W - AXIS_W, mainH, subH, subs, wts};
   }
   get end() { return (this.data ? this.data.n - 1 : 0) + this.off; }
   start(pw) { return this.end - pw / this.barW + 1; }
@@ -482,7 +570,8 @@ class Chart {
     g.restore();
     // sub panes
     let top = D.mainH;
-    D.subs.forEach(x => { const k = S.indicators.indexOf(x); this.drawSub(g, D, top, inds[k], x, i0, i1); top += D.subH; });
+    D.subs.forEach((x, s) => { const k = S.indicators.indexOf(x), Ds = Object.assign({}, D, {subH: D.subH * D.wts[s]});
+      this.drawSub(g, Ds, top, inds[k], x, i0, i1); top += Ds.subH; });
     this.drawAxes(g, D, d);
     this.drawLegend(d, inds);
     // watermark
@@ -563,14 +652,69 @@ class Chart {
         g.fillStyle = v >= 0 ? (fin(prev) && v < prev ? C.up + "88" : C.up) : (fin(prev) && v > prev ? C.down + "88" : C.down);
         const y = yf(v); g.fillRect(this.x(i) - w/2, Math.min(y, z), w, Math.max(1, Math.abs(z - y))); } }
     (r.lines || []).forEach(l => this.line(g, l.v, i0, i1, l.color, l.width, l.dash));
+    if (r.osc) this.drawOsc(g, D, top, r.osc, yf, i0, i1, r.oscP || {});
     g.fillStyle = C.muted; g.font = "11px system-ui"; g.textBaseline = "top"; g.textAlign = "left";
-    const def = INDICATORS[cfg.type], prm = Object.values(Object.assign({}, def.params, cfg.params)).join(", ");
-    const last = (r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[Math.min(this.data.n - 1, Math.round(this.mouse ? this.iAt(this.mouse.x) : this.data.n - 1))];
-    g.fillText(`${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}`, 8, top + 4);
+    const def = INDICATORS[cfg.type], prm = r.osc ? "" : Object.values(Object.assign({}, def.params, cfg.params)).join(", ");
+    const at = Math.min(this.data.n - 1, Math.round(this.mouse ? this.iAt(this.mouse.x) : this.data.n - 1));
+    const last = (r.osc ? r.osc.wt1 : r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[at];
+    const extra = r.osc && fin(r.osc.bull[at]) ? `  rank ${r.osc.bull[at]}/7  flow ${fin(r.osc.mf[at]) ? r.osc.mf[at].toFixed(0) : "-"}` : "";
+    g.fillText(`${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}${extra}`, 8, top + 4);
     g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = C.muted;
     [hi, lo].forEach(v => g.fillText(Math.abs(v) >= 1e5 ? fmtVol(v) : v.toFixed(Math.abs(v) < 10 ? 2 : 0), D.pw + 6, yf(v)));
     if (this.mouse && this.mouse.y > top && this.mouse.y < top + D.subH) this.drawCrossV(g, D, top, top + D.subH);
     g.restore();
+  }
+  drawOsc(g, D, top, o, yf, i0, i1, p) {
+    const TEAL = "#26e0c0", PINK = "#ff3d71", ORANGE = "#ffa726", BLUE = "#42a5f5", YELLOW = "#ffd54f";
+    const z = yf(0), lo = Math.max(0, i0), hi = Math.min(o.wt1.length - 1, i1), bot = top + D.subH;
+    const sq = Math.max(1.5, Math.min(5, this.barW * 0.6)), money = p.mode === "money";
+    const mfv = i => Math.max(-100, Math.min(100, o.mf[i] * (money ? 1.2 : 1)));
+    if (hi <= lo) return;
+    const cloud = (sel, col, edge) => {                                 // money flow cloud, fading toward zero
+      g.beginPath(); g.moveTo(this.x(lo), z);
+      for (let i = lo; i <= hi; i++) g.lineTo(this.x(i), yf(fin(o.mf[i]) ? sel(mfv(i), 0) : 0));
+      g.lineTo(this.x(hi), z); g.closePath();
+      const gr = g.createLinearGradient(0, yf(edge), 0, z); gr.addColorStop(0, col + (money ? "dd" : "99")); gr.addColorStop(1, col + "08");
+      g.fillStyle = gr; g.fill(); };
+    cloud(Math.max, TEAL, 100); cloud(Math.min, PINK, -100);
+    for (let i = lo; i <= hi; i++) {                                    // volume matrix strip along the bottom
+      const v = o.vm[i]; if (!fin(v)) continue;
+      g.globalAlpha = Math.min(1, 0.15 + Math.abs(v)); g.fillStyle = v >= 0 ? TEAL : PINK;
+      g.fillRect(this.x(i) - this.barW / 2, bot - 9, Math.max(1, this.barW - 0.5), 6); }
+    g.globalAlpha = 1;
+    const r = Math.max(2, Math.min(3.5, this.barW / 2));
+    for (let i = lo; i <= hi; i++) if (o.mfdiv[i] && fin(o.mf[i])) {   // money flow divergence: yellow dots
+      g.fillStyle = YELLOW; g.beginPath(); g.arc(this.x(i), yf(mfv(i)), r, 0, 7); g.fill(); }
+    if (money) return;
+    for (let i = lo; i <= hi; i++) {                                    // power bars: >= 5 of 7 trend conditions agree
+      const b = o.bull[i]; if (!fin(b)) continue; const s = Math.max(b, 7 - b); if (s < 5) continue;
+      g.globalAlpha = (s - 4) / 3; g.fillStyle = b >= 5 ? TEAL : PINK; g.fillRect(this.x(i) - sq / 2, top + 19, sq, sq); }
+    g.globalAlpha = 1;
+    this.line(g, o.wt2, i0, i1, this.C.muted, 1, [2, 2]);
+    g.save(); g.lineWidth = 2.2; g.lineCap = "round"; g.shadowBlur = 7;  // main line with glow: teal over its signal, pink under
+    for (let i = Math.max(1, lo); i <= hi; i++) { if (!fin(o.wt1[i]) || !fin(o.wt1[i-1])) continue;
+      const col = fin(o.wt2[i]) && o.wt1[i] < o.wt2[i] ? PINK : TEAL; g.strokeStyle = col; g.shadowColor = col;
+      g.beginPath(); g.moveTo(this.x(i-1), yf(o.wt1[i-1])); g.lineTo(this.x(i), yf(o.wt1[i])); g.stroke(); }
+    g.restore();
+    const tri = (x, y, up, col, s) => { g.fillStyle = col; g.beginPath(); g.moveTo(x, up ? y - s : y + s);
+      g.lineTo(x - s, up ? y + s * 0.8 : y - s * 0.8); g.lineTo(x + s, up ? y + s * 0.8 : y - s * 0.8); g.closePath(); g.fill(); };
+    g.font = "bold 10px system-ui"; g.textAlign = "center"; g.textBaseline = "middle";
+    for (let i = lo; i <= hi; i++) {
+      const x = this.x(i);
+      if (o.div[i] && fin(o.dfrom[i])) {                               // divergence: green line joins troughs, red joins peaks; blue peak-seeker dot
+        const a = o.dfrom[i], b = o.dto[i]; g.strokeStyle = o.div[i] > 0 ? TEAL : PINK; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(this.x(a), yf(o.wt1[a])); g.lineTo(this.x(b), yf(o.wt1[b])); g.stroke();
+        g.fillStyle = BLUE; g.beginPath(); g.arc(x, top + 30, r, 0, 7); g.fill(); }
+      if (o.rev[i]) { g.fillStyle = o.rev[i] > 0 ? TEAL : PINK;          // momentum dot where the ribbon twists
+        g.strokeStyle = this.C.bg; g.lineWidth = 1; g.beginPath(); g.arc(x, yf(o.wt1[i]), r + 1, 0, 7); g.fill(); g.stroke(); }
+      if (o.trend[i]) tri(x, o.trend[i] > 0 ? bot - 24 : top + 42, o.trend[i] > 0, o.trend[i] > 0 ? TEAL : PINK, 4);   // trend arrows
+      if (o.fair[i] && o.fair[i] !== o.fair[i - 1]) { g.fillStyle = ORANGE; g.fillRect(x - sq / 2, o.fair[i] > 0 ? bot - 17 : top + 26 + r + 3, sq, sq); }
+      if (o.diamond[i]) { const up = o.diamond[i] > 0, y = yf(o.wt1[i]) + (up ? 14 : -14), s = 6;   // diamond shift
+        g.fillStyle = up ? TEAL : PINK; g.strokeStyle = "#ffffff"; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x, y - s); g.lineTo(x + s * 0.75, y); g.lineTo(x, y + s); g.lineTo(x - s * 0.75, y); g.closePath(); g.fill(); g.stroke(); }
+      const b = o.bull[i], pb = o.bull[i - 1];                          // True-7 score at extremes, when it changes
+      if (p.score && fin(b) && (b === 7 || b === 0) && b !== pb) { g.fillStyle = b === 7 ? TEAL : PINK; g.fillText("7", x, top + 52); }
+    }
   }
   drawCrossV(g, D, a, b) { if (!this.mouse || S.tool === "none") return; g.save(); g.strokeStyle = this.C.cross; g.setLineDash([4, 4]); g.beginPath(); const x = Math.round(this.x(Math.round(this.iAt(this.mouse.x)))) + 0.5; g.moveTo(x, a); g.lineTo(x, b); g.stroke(); g.restore(); }
   hline(g, D, p, color, label, dash, x0 = 0, width = 1) {

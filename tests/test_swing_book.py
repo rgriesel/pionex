@@ -18,6 +18,8 @@ class Book(unittest.TestCase):
         self.assertIn("A", t["weights"])
         self.assertNotIn("B", t["weights"])
         self.assertLessEqual(sum(t["weights"].values()), 1.0 + 1e-9)
+        g = sb.targets({"A": up, "B": down, "C": up[:50]}, sizing="equal")
+        self.assertEqual(g["weights"], {"A": 0.5})                       # growth book: 1/N per IN coin
 
     def test_forward_paper_run_books_returns_and_costs(self):
         from datetime import datetime, timezone

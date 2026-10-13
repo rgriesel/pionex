@@ -696,7 +696,8 @@ def load(tf, symbol="BTC_USDT"):
         bars = MarketView(p.proxy_market).bars(symbol, "5M")
         bars = resample(bars, "15M") if tf == "15m" else bars
     else:
-        bars = MarketView(p.proxy_market).bars(symbol, "60M")
+        src = p.proxy_market if symbol in ("BTC_USDT", "ETH_USDT") else p.root / "alpha" / "alts_1h.db"
+        bars = MarketView(src).bars(symbol, "60M")
         bars = resample(bars, "4H") if tf == "4h" else bars
     b = {"t": list(bars.t), "o": list(bars.o), "h": list(bars.h), "l": list(bars.l), "c": list(bars.c), "v": list(bars.v)}
     _CACHE[key] = b
@@ -713,6 +714,47 @@ def work(task):
     return {"tf": tf, "strategy": name, "symbol": symbol, "oos": s, "per_year": s["n"] / years if years else None,
             "folds": folds, "chosen": chosen,
             "trades": [{"entry_time": x[0], "exit_time": x[1], "side": x[2], "gross_bps": x[3] * 1e4, "net_bps": x[4] * 1e4} for x in oos]}
+
+
+TREND = ("keltner_breakout", "ema_cross", "supertrend", "psar_ema", "donchian", "heikin_ashi", "ut_bot", "macd_ema200")
+COINS = ("BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "DOGE_USDT", "LINK_USDT", "ADA_USDT", "BNB_USDT", "AVAX_USDT", "LTC_USDT")
+POOLED_RULES = """pooled 4h trend family (pre-registered 2026-10-14 01:40 SAST): the 8 trend/breakout strategies on 4h
+bars of 10 coins, the same per-coin walk-forward (5 parts), max hold 60 bars (10 days), Pionex costs.
+Pass for a strategy: pooled out-of-sample mean net > 0, profit factor >= 1.1, positive total on >= 7 of
+10 coins, and a daily-block bootstrap lower bound > 0 at alpha 0.05 / 8."""
+
+
+def _pooled_work(task):
+    tf, name, symbol, hold = task
+    b = load(tf, symbol)
+    oos, folds, chosen, _ = evaluate(b, name, hold)
+    return name, symbol, [{"entry_time": x[0], "exit_time": x[1], "side": x[2], "gross_bps": x[3] * 1e4, "net_bps": x[4] * 1e4} for x in oos]
+
+
+def run_pooled(tf="4h", hold=60, workers=None):
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+    from ..research import metrics
+    tasks = [(tf, n, s, hold) for n in TREND for s in COINS]
+    with ProcessPoolExecutor(max_workers=workers or max(1, (os.cpu_count() or 2) - 1)) as pool:
+        res = list(pool.map(_pooled_work, tasks))
+    out = {}
+    for name in TREND:
+        per = {s: tr for n, s, tr in res if n == name}
+        allt = sorted([t for tr in per.values() for t in tr], key=lambda x: x["exit_time"])
+        nets = [t["net_bps"] for t in allt]
+        wins = [x for x in nets if x > 0]
+        ls = [-x for x in nets if x < 0]
+        coin_tot = {s: sum(t["net_bps"] for t in tr) / 100 for s, tr in per.items()}
+        mean = sum(nets) / len(nets) if nets else 0.0
+        pf = sum(wins) / sum(ls) if ls else None
+        pos = sum(v > 0 for v in coin_tot.values())
+        cand = mean > 0 and (pf or 0) >= 1.1 and pos >= 7
+        lb = metrics.block_bootstrap_lower(allt, 0.05 / len(TREND)) if cand else None
+        out[name] = {"n": len(nets), "mean_bps": mean, "pf": pf, "win": len(wins) / len(nets) if nets else None,
+                     "coins_positive": pos, "coin_total_pct": coin_tot, "bootstrap_lower_bps": lb,
+                     "pass": bool(cand and lb is not None and lb > 0)}
+    return out
 
 
 def run_all(symbol="BTC_USDT", workers=None):

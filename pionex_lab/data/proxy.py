@@ -30,8 +30,11 @@ from ..exchange.pionex_public import KLINE_INTERVALS, Kline
 
 BASE_URL = "https://data.binance.vision/data/spot"
 VENUE = "Binance public spot archive (data.binance.vision) - PROXY VENUE, not Pionex"
-SYMBOLS = {"BTC_USDT": "BTCUSDT", "ETH_USDT": "ETHUSDT"}
-INTERVALS = {"5M": "5m", "60M": "1h", "1D": "1d"}
+SYMBOLS = {"BTC_USDT": "BTCUSDT", "ETH_USDT": "ETHUSDT",
+           # daily-only research symbols (swing/trend.py breadth check); the lab universe stays BTC/ETH
+           "SOL_USDT": "SOLUSDT", "XRP_USDT": "XRPUSDT", "DOGE_USDT": "DOGEUSDT", "LINK_USDT": "LINKUSDT",
+           "ADA_USDT": "ADAUSDT", "BNB_USDT": "BNBUSDT", "AVAX_USDT": "AVAXUSDT", "LTC_USDT": "LTCUSDT"}
+INTERVALS = {"1M": "1m", "5M": "5m", "60M": "1h", "1D": "1d"}
 # Research may use the proxy only if it tracks Pionex this closely on overlapping bars.
 MIN_OVERLAP_BARS = 2000
 MAX_MEDIAN_CLOSE_DIFF_BPS = 5.0

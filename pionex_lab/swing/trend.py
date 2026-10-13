@@ -161,6 +161,154 @@ def run_oos(paths) -> dict:
     return report
 
 
+BREADTH = ("SOL_USDT", "XRP_USDT", "DOGE_USDT", "LINK_USDT", "ADA_USDT", "BNB_USDT", "AVAX_USDT", "LTC_USDT")
+BREADTH_RULES = "daily-trend breadth check (pre-registered 2026-10-13 21:45 SAST, before any of these coins was tested)"
+
+
+def run_breadth(paths) -> dict:
+    """Breadth check, pre-registered 2026-10-13 after ema50 passed on BTC/ETH in and out of sample.
+    The same rules, unchanged, on 8 other Pionex-listed coins never used before (Binance spot daily
+    klines, PROXY, from each coin's listing or 2017-08 to now; first 100 days are warm-up):
+      ema50        hold above the daily EMA50, else cash
+      ema50_vol40  ema50 sized by min(1, 40% / 30-day realised volatility)
+    Pass: ema50 beats holding on Sharpe AND max drawdown on at least 6 of the 8 coins.
+    Also reported: an equal-weight, daily-rebalanced basket of all 10 coins (with BTC and ETH),
+    filtered vs held. Caveat: these are today's survivors, which flatters holding more than the filter."""
+    from ..data.store import MarketView
+    view = MarketView(paths.proxy_market)
+    report = {"rules": BREADTH_RULES, "venue": "PROXY: Binance spot daily klines, not Pionex", "coins": {}}
+    wins = 0
+    for sym in BREADTH:
+        d = view.bars(sym, "1D")
+        if len(d) < WARMUP + 200:
+            report["coins"][sym] = {"error": f"only {len(d)} days"}
+            continue
+        h, e, v = backtest(d, "hold"), backtest(d, "ema50"), vol_scaled(d, WARMUP)
+        better = e["sharpe"] > h["sharpe"] and e["max_drawdown"] < h["max_drawdown"]
+        wins += better
+        report["coins"][sym] = {"from": d.t[0], "days": len(d), "hold": h, "ema50": e, "ema50_vol40": v, "ema50_better": better}
+    report["ema50_better_on"] = wins
+    report["passes"] = wins >= 6
+    # equal-weight basket: average of each coin's daily return under each rule, on days all coins trade
+    series = {}
+    for sym in ("BTC_USDT", "ETH_USDT") + BREADTH:
+        d = view.bars(sym, "1D")
+        if len(d) < WARMUP + 200:
+            continue
+        pos = positions(list(d.c), "ema50")
+        for i in range(WARMUP, len(d) - 1):
+            r = d.o[i + 1] / d.o[i] - 1
+            row = series.setdefault(d.t[i], {})
+            prev = pos[i - 2] if i >= 2 else 0
+            row[sym] = (r, (pos[i - 1] * r) - (SIDE_COST if pos[i - 1] != prev else 0.0))
+    n_coins = max(len(v) for v in series.values())
+    days = sorted(t for t, v in series.items() if len(v) == n_coins)
+    out = {}
+    for k, name in ((0, "hold"), (1, "ema50")):
+        rets = [sum(series[t][s][k] for s in series[t]) / n_coins for t in days]
+        eq, peak, mdd = 1.0, 1.0, 0.0
+        for x in rets:
+            eq *= 1 + x
+            peak = max(peak, eq)
+            mdd = max(mdd, 1 - eq / peak)
+        mean = sum(rets) / len(rets)
+        sd = math.sqrt(sum((x - mean) ** 2 for x in rets) / len(rets))
+        out[name] = {"total": eq - 1, "cagr": eq ** (365.25 / len(rets)) - 1, "max_drawdown": mdd,
+                     "sharpe": mean / sd * math.sqrt(365.25) if sd else None, "days": len(rets)}
+    report["basket"] = {"coins": n_coins, "from": days[0] if days else None, **out}
+    dst = paths.reports / "daily_trend_breadth.json"
+    dst.write_text(json.dumps(report, indent=1), encoding="utf-8")
+    return report
+
+
+XS_UNIVERSE = ("BTC_USDT", "ETH_USDT") + BREADTH
+XS_RULES = "cross-sectional momentum (pre-registered 2026-10-13 22:30 SAST, before any result)"
+
+
+def run_xsmom(paths) -> dict:
+    """Cross-sectional momentum across 10 Pionex-listed coins, spot, long-only, weekly.
+    Every Monday 00:00 UTC, rank the coins with >= 60 days of history by their return over the last L
+    days (closes up to Sunday), hold the top 3 equally for the week (open-to-open returns), pay
+    7 bps per side on the weight that changes. Variants: L = 14, 28, 56; and L = 28 where each pick
+    is only held while it closes above its own daily EMA50 (else that slot sits in cash).
+    Benchmarks: equal weight of all available coins (weekly rebalanced) and BTC buy-and-hold.
+    Pass: L=28 beats equal weight on Sharpe in >= 2 of 3 thirds of 2021-01..now (all 10 coins
+    listed), AND the EMA50 version beats equal weight on both Sharpe and max drawdown overall.
+    Caveat: today's survivors, which flatters every long strategy. Data: Binance spot daily (PROXY)."""
+    from datetime import datetime, timezone
+    from ..data.store import MarketView
+    view = MarketView(paths.proxy_market)
+    px = {}
+    for s in XS_UNIVERSE:
+        d = view.bars(s, "1D")
+        e = ema(list(d.c), 50)
+        px[s] = {t: (o, c, ev) for t, o, c, ev in zip(d.t, d.o, d.c, e)}
+    days = sorted(set().union(*[set(v) for v in px.values()]))
+    start21 = int(datetime(2021, 1, 4, tzinfo=timezone.utc).timestamp() * 1000)   # a Monday
+    DAYMS = 86_400_000
+
+    def close_on(s, t):
+        r = px[s].get(t)
+        return r[1] if r else None
+
+    def simulate(rule, L=28, k=3):
+        w, eq, rets = {}, 1.0, []
+        for idx in range(60, len(days) - 1):
+            t, tn = days[idx], days[idx + 1]
+            if tn - t != DAYMS:
+                continue
+            monday = datetime.fromtimestamp(t / 1000, timezone.utc).weekday() == 0
+            if monday:
+                prev, back = t - DAYMS, t - (L + 1) * DAYMS
+                avail = [s for s in XS_UNIVERSE if prev in px[s] and t - 60 * DAYMS in px[s] and t in px[s] and tn in px[s]]
+                if rule == "ew":
+                    pick = avail
+                elif rule == "btc":
+                    pick = ["BTC_USDT"] if "BTC_USDT" in avail else []
+                else:
+                    sc = {s: close_on(s, prev) / close_on(s, back) - 1 for s in avail if back in px[s]}
+                    pick = sorted(sc, key=lambda s: -sc[s])[:k]
+                    if rule == "mom_ema":
+                        pick = [s for s in pick if px[s][prev][2] == px[s][prev][2] and px[s][prev][1] > px[s][prev][2]]
+                slots = len(avail) if rule == "ew" else (1 if rule == "btc" else k)
+                new = {s: 1.0 / max(1, slots) for s in pick}
+                turn = sum(abs(new.get(s, 0) - w.get(s, 0)) for s in set(new) | set(w))
+                cost = turn * SIDE_COST
+                w = new
+            else:
+                cost = 0.0
+            r = sum(wt * (px[s][tn][0] / px[s][t][0] - 1) for s, wt in w.items() if t in px[s] and tn in px[s]) - cost
+            if t >= start21:
+                rets.append((t, r))
+        return rets
+
+    def stats(rets):
+        xs = [r for _, r in rets]
+        eq, peak, mdd = 1.0, 1.0, 0.0
+        for r in xs:
+            eq *= 1 + r
+            peak = max(peak, eq)
+            mdd = max(mdd, 1 - eq / peak)
+        m = sum(xs) / len(xs)
+        sd = math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
+        k3 = len(xs) // 3
+        thirds = [(lambda p: (sum(p) / len(p)) / (math.sqrt(sum((x - sum(p) / len(p)) ** 2 for x in p) / len(p)) or 1) * math.sqrt(365.25))(xs[a:b])
+                  for a, b in ((0, k3), (k3, 2 * k3), (2 * k3, len(xs)))]
+        return {"total": eq - 1, "cagr": eq ** (365.25 / len(xs)) - 1, "max_drawdown": mdd,
+                "sharpe": m / sd * math.sqrt(365.25) if sd else None, "sharpe_thirds": thirds, "days": len(xs)}
+
+    res = {"rules": XS_RULES, "venue": "PROXY: Binance spot daily klines, not Pionex", "from": "2021-01-04"}
+    for name, rule, L in (("equal_weight", "ew", 28), ("btc_hold", "btc", 28), ("mom14", "mom", 14),
+                          ("mom28", "mom", 28), ("mom56", "mom", 56), ("mom28_ema50", "mom_ema", 28)):
+        res[name] = stats(simulate(rule, L))
+    ew, m28, me = res["equal_weight"], res["mom28"], res["mom28_ema50"]
+    res["passes"] = (sum(a > b for a, b in zip(m28["sharpe_thirds"], ew["sharpe_thirds"])) >= 2
+                     and me["sharpe"] > ew["sharpe"] and me["max_drawdown"] < ew["max_drawdown"])
+    dst = paths.reports / "xs_momentum_v1.json"
+    dst.write_text(json.dumps(res, indent=1), encoding="utf-8")
+    return res
+
+
 def run(paths, cfg) -> dict:
     from ..cli import _universe_bars
     from ..data.store import resample

@@ -358,6 +358,18 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_guidance(args, paths, cfg, mandate):
+    """Forward-only scorecard of the channels' BTC calls (swing/guidance.py). Guidance only, no orders."""
+    from .swing import guidance
+    paths.ensure()
+    if args.add:
+        calls = json.loads(Path(args.add).read_text(encoding="utf-8"))
+        print(f"recorded {guidance.add(paths.root / 'guidance' / 'btc_calls.jsonl', calls)} new call(s)")
+    report = guidance.run(paths)
+    print(json.dumps(report["summary"]["all"], indent=2))
+    return 0
+
+
 def cmd_wave_alerts(args, paths, cfg, mandate):
     """Watch-only Elliott wave entry/close alerts for manual trading (waves/alerts.py). No orders."""
     from .waves.alerts import run
@@ -659,7 +671,9 @@ def main(argv=None) -> int:
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
-    p = sub.add_parser("fetch-proxy", help="download/refresh labelled proxy-venue history (Binance public archive)")
+    p = sub.add_parser("guidance", help="forward-only scorecard of the YouTube channels' BTC calls")
+    p.add_argument("--add", help="JSON file with a list of new calls to record first")
+    p = sub.add_parser("fetch-proxy",help="download/refresh labelled proxy-venue history (Binance public archive)")
     p.add_argument("--months", type=int, default=None, help="full months of history (default: proxy.DEFAULT_MONTHS)")
     p = sub.add_parser("paper", help="run the paper engine")
     p.add_argument("--pionex-cli", help="path to pionex-trade-cli for dry-run previews (default: auto)")

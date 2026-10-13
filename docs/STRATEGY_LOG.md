@@ -9,8 +9,9 @@ repeats.
 
 | Date | Strategy | Hold | Result | Status |
 |---|---|---|---|---|
-| 2026-10-14 | **CTA trend basket, defensive** (`swing/cta.py`): 10 coins, IN when 2 of 20/60/120-day returns > 0, size (40%/N)/30d vol, cap 100%, 2% band, daily at 00:00 UTC | per coin while trending (median 3 d, mean 16 d, top 10% ≥ 48 d) | 2017-12→2026-10: 37.9%/yr, max DD 26%, Sharpe 1.42 (thirds 1.41/1.36/1.48) vs hold-all 45%/yr, DD 83%, Sharpe 0.87. 4× costs: Sharpe 1.29 | **PASS** → paper book `var/swing_book/state.json` from 2026-10-14; red team review pending |
-| 2026-10-14 | CTA trend basket, growth (same signals, 1/N sizing) | same | 70%/yr, DD 55%, Sharpe 1.25 (not the pre-registered variant) | paper book `state_growth.json` (comparison) |
+| 2026-10-13 | **CTA trend basket v1.1, defensive** (`swing/cta.py`): 10 coins, IN when 2 of 20/60/120-day returns > 0, size (40%/N)/30d vol, cap 100%, 2% band on drifted weights, daily at 00:00 UTC, measured Pionex spreads in costs | per coin while trending (median 3 d, mean 16 d, top 10% ≥ 48 d) | **In-sample** (rules written with the first results, informed by the BTC/ETH EMA50 tests). 2017-12→2026-10: 35.8%/yr, max DD 26%, Sharpe 1.37 (thirds 1.38/1.29/1.44) vs hold-all 45.6%/yr, DD 82%, Sharpe 0.88; since 2021 Sharpe 1.37 vs 0.98. 4× costs: 30.9%/yr, DD 31%, Sharpe 1.22. Turnover 15.6×/yr | **PASS**; red team (Opus): HOLDS WITH FIXES → fixes applied in v1.1 (v1 was 37.9%/yr, Sharpe 1.42). Paper book `var/swing_book/state.json`, 1000 USDT, from 2026-10-14 |
+| 2026-10-13 | CTA basket at small capital (10 USDT minimum buy, allocation capped) | same | 10 coins @ 100 USDT: 16.6%/yr, DD 19%, Sharpe 1.30 but avg 11% invested (most positions < 10 USDT); @ 500+ USDT: unaffected. BTC+ETH only @ 100 USDT: 32.7%/yr, DD 33%, Sharpe 1.15, 35% invested | capital check → canary paper book `state_canary.json` (BTC+ETH, 100 USDT) |
+| 2026-10-13 | CTA trend basket, growth (same signals, 1/N sizing) | same | v1.1: 68.4%/yr, DD 55%, Sharpe 1.26 (not the tested variant) | paper book `state_growth.json`, 1000 USDT (comparison) |
 
 ## Tested and not good enough
 

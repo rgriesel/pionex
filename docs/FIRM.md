@@ -49,16 +49,27 @@ night; review agents run only on a PASS (dotta: reviews cost tokens; use them wh
 | 07:52 | morning summary for the owner |
 | 21:43 | YouTube BTC calls + guidance scorecard |
 
-## Current decision (lead, 2026-10-14)
+## Current decision (lead, 2026-10-13, after the red team)
 
-- **Strategy:** CTA trend basket, *defensive* settings exactly as pre-registered — no post-hoc tuning.
+- **Strategy:** CTA trend basket v1.1, *defensive* settings as first tested — no post-hoc tuning.
   10 coins (BTC ETH SOL XRP DOGE LINK ADA BNB AVAX LTC); coin IN while ≥ 2 of its 20/60/120-day returns
   are positive; size (40% ÷ N) ÷ 30-day volatility; total ≤ 100%; long or cash; rebalance once a day
   at 00:00 UTC (02:00 SAST) with a 2% no-trade band.
 - **How long to hold:** no fixed time — each coin is held while its trend vote stays positive and sold
   the day it turns. Backtest: median 3 days (whipsaws), mean 16 days, top 10% of holds 48+ days; the
   long trends pay for the short ones, so they must not be cut early.
-- **Why not more aggressive:** the growth variant (equal sizing) made more in backtest (70%/yr) but
+- **Why not more aggressive:** the growth variant (equal sizing) made more in backtest (68%/yr) but
   with a 55% drawdown; it runs as a paper comparison only.
+- **What to expect (planning range, not a forecast):** the backtest is in-sample (35.8%/yr, Sharpe
+  1.37, drawdown 26%). The red team's discount for that: plan for roughly 25–30%/yr, Sharpe 1.0–1.2,
+  and drawdowns of 30–35%. Long flat or losing stretches in sideways markets are normal for trend
+  following.
+- **Paper books (from 2026-10-14, 00:00 UTC):** defensive 1000 USDT (10 coins), growth 1000 USDT
+  (comparison), canary 100 USDT (BTC + ETH only). 1000 is used because at 100 USDT most coin
+  positions fall under Pionex's 10 USDT minimum buy and the 10-coin book would sit ~89% in cash.
+- **Live plan under the $100 cap (owner decides; not before 60 paper days + risk-officer review):**
+  the canary book exactly — BTC + ETH, vol-sized, ≤ $100. Backtest 32.7%/yr, drawdown 33% (≈ $33 at
+  worst), Sharpe 1.15. It tests execution and behaviour, not income: at $100 it makes tens of dollars
+  a year at best.
 - **Next test (pre-register before running):** a whipsaw filter (e.g. enter on 3 of 3 positive, exit
   on ≤ 1 of 3) — only if the red team and paper period support it.

@@ -1,15 +1,18 @@
-"""Paper swing book: the CTA trend basket (swing/cta.py, pre-registered and passed) run forward on
-Pionex's own daily candles. PAPER ONLY: it computes target weights and simulated equity; it places
-no orders and has no order path. Outside the lab mandate (which caps holds at 4h); the user asked
-for longer holds on 2026-10-14 and owns any mandate change.
+"""Paper swing book: the CTA trend basket (swing/cta.py v1.1, an in-sample backtest that passed and
+survived red-team review with fixes) run forward on Pionex's own daily candles. PAPER ONLY: it
+computes target weights and simulated equity; it places no orders and has no order path. Outside
+the lab mandate (which caps holds at 4h); the user asked for longer holds and owns any mandate change.
 
-Rules (unchanged from cta.py): 10 coins; a coin is IN when at least 2 of its 20/60/120-day returns
-are positive (on the last closed daily candle); weight = (40% / N) / 30-day annualised vol, total
-capped at 100%; only weight changes > 2% trade; 0.07% per side on traded weight; rebalanced at the
-00:00 UTC open. Paper capital: 100 USDT from FORWARD_START.
-Two books: "defensive" (the pre-registered vol sizing above) and "growth" (same signals, 1/N per IN
-coin; backtest ~70%/yr, 55% max drawdown, Sharpe 1.25; also beat holding but was not the
-pre-registered variant).
+Rules (same as cta.py): a coin is IN when at least 2 of its 20/60/120-day returns are positive (on
+the last closed daily candle); weight = (40% / N) / 30-day annualised vol, total capped at 100%;
+weights drift with prices and only changes > 2% (or opens/closes) trade; buys under 10 USDT are
+skipped (Pionex minimum); cost per side = 0.05% fee + 0.02% slippage + half the measured spread;
+rebalanced at the 00:00 UTC open from FORWARD_START.
+Books (paper USDT chosen before the start so the 10 USDT minimum does not distort them):
+  defensive  10 coins, vol sizing (the tested variant)                         1000 USDT
+  growth     10 coins, 1/N per IN coin (comparison; backtest DD ~55%)            1000 USDT
+  canary     BTC + ETH only, vol sizing: exactly what a <= $100 live canary        100 USDT
+             could hold (the full basket at $100 would sit ~89% in cash)
 """
 from __future__ import annotations
 
@@ -18,11 +21,14 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .cta import UNIVERSE
+from .cta import UNIVERSE, drift, rebalance
 
 FORWARD_START = "2026-10-14"
-TARGET, BAND, SIDE = 0.40, 0.02, (5 + 2) / 1e4
+TARGET, BAND = 0.40, 0.02
 DAY = 86_400_000
+BOOKS = {"defensive": {"sizing": "vol", "coins": UNIVERSE, "usdt": 1000.0, "file": "state.json"},
+         "growth": {"sizing": "equal", "coins": UNIVERSE, "usdt": 1000.0, "file": "state_growth.json"},
+         "canary": {"sizing": "vol", "coins": ("BTC_USDT", "ETH_USDT"), "usdt": 100.0, "file": "state_canary.json"}}
 
 
 def candles(client, sym, now_ms):
@@ -55,22 +61,21 @@ def targets(series: dict, sizing: str = "vol") -> dict:
     return {"weights": w, "info": info, "available": n}
 
 
-def step(state: dict, day_ms: int, opens: dict, prev_opens: dict, tgt: dict) -> dict:
-    """Advance one day: book yesterday->today open-to-open returns on the held weights, then
-    rebalance to today's targets (band + costs)."""
+def step(state: dict, day_ms: int, opens: dict, prev_opens: dict, tgt: dict, capital: float | None = None) -> dict:
+    """Advance one day: book yesterday->today open-to-open returns on the held weights (which then
+    drift with prices), then rebalance to today's targets (band, minimum buy, gross cap, costs).
+    `capital` caps the USDT used for the minimum-buy check (as in cta.simulate)."""
     w = state.get("weights", {})
-    r = sum(v * (opens[s] / prev_opens[s] - 1) for s, v in w.items() if s in opens and s in prev_opens)
-    traded, new = 0.0, dict(w)
-    for s in set(tgt) | set(w):
-        a, b = w.get(s, 0.0), tgt.get(s, 0.0)
-        if abs(b - a) > BAND or (a == 0.0) != (b == 0.0):
-            traded += abs(b - a)
-            new[s] = b
-    new = {s: v for s, v in new.items() if v > 0}
-    eq = state.get("equity", 100.0) * (1 + r) * (1 - traded * SIDE)
+    rets = {s: opens[s] / prev_opens[s] - 1 for s in w if s in opens and s in prev_opens}
+    w, r = drift(w, rets)
+    eq = state.get("equity", capital or 100.0) * (1 + r)
+    usdt = None if capital is None else min(eq, capital)
+    new, paid, traded = rebalance(w, tgt, set(opens), BAND, usdt)
+    eq *= 1 - paid
     state.update(equity=eq, weights=new, last_day=day_ms)
     state.setdefault("history", []).append({"day": datetime.fromtimestamp(day_ms / 1000, timezone.utc).date().isoformat(),
-                                            "ret_pct": round(100 * r, 3), "traded": round(traded, 4), "equity": round(eq, 4)})
+                                            "ret_pct": round(100 * r, 3), "traded": round(traded, 4),
+                                            "cost_pct": round(100 * paid, 4), "equity": round(eq, 4)})
     return state
 
 
@@ -78,11 +83,15 @@ def run(paths, client=None, now_ms=None, book="defensive") -> dict:
     from ..exchange.pionex_public import PionexPublic
     client = client or PionexPublic()
     now_ms = now_ms or int(datetime.now(timezone.utc).timestamp() * 1000)
-    sizing = {"defensive": "vol", "growth": "equal"}[book]
-    path = Path(paths.root) / "swing_book" / ("state.json" if book == "defensive" else f"state_{book}.json")
+    cfg = BOOKS[book]
+    sizing, capital = cfg["sizing"], cfg["usdt"]
+    path = Path(paths.root) / "swing_book" / cfg["file"]
     path.parent.mkdir(parents=True, exist_ok=True)
-    state = json.loads(path.read_text()) if path.exists() else {"start": FORWARD_START, "equity": 100.0, "weights": {}, "book": book}
-    series = {s: candles(client, s, now_ms) for s in UNIVERSE}
+    state = json.loads(path.read_text()) if path.exists() else {"start": FORWARD_START, "equity": capital, "weights": {}, "book": book}
+    if not state.get("history"):                               # not started yet: (re)set the paper notional
+        state["equity"] = capital
+    state.update(book=book, paper_usdt=capital, coins=list(cfg["coins"]))
+    series = {s: candles(client, s, now_ms) for s in cfg["coins"]}
     start_ms = int(datetime.fromisoformat(FORWARD_START).replace(tzinfo=timezone.utc).timestamp() * 1000)
     days = sorted({r[0] for rows in series.values() for r in rows})
     for d in days:                                             # each day's open is a rebalance point
@@ -92,9 +101,10 @@ def run(paths, client=None, now_ms=None, book="defensive") -> dict:
         tgt = targets(hist, sizing)["weights"]
         opens = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d}
         prev = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d - DAY}
-        state = step(state, d, opens, prev, tgt)
+        state = step(state, d, opens, prev, tgt, capital)
     latest = targets(series, sizing)
     state["next_targets"] = {s: round(v, 4) for s, v in latest["weights"].items()}
+    state["next_targets_usdt"] = {s: round(v * min(state["equity"], capital), 2) for s, v in latest["weights"].items()}
     state["signals"] = {s: {"in": v["in"], "vol_pct": round(100 * v["vol"], 1), "r20_pct": round(100 * v["r20"], 1),
                             "r60_pct": round(100 * v["r60"], 1), "r120_pct": round(100 * v["r120"], 1)} for s, v in latest["info"].items()}
     state["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")

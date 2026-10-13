@@ -36,10 +36,51 @@ class Book(unittest.TestCase):
             now = first + 209 * DAY + 1
             st = sb.run(paths, client=Client(), now_ms=now)
             self.assertGreater(len(st["history"]), 3)
-            self.assertGreater(st["equity"], 100.0)                       # steady uptrend, held long
+            self.assertGreater(st["equity"], 1000.0)                      # steady uptrend, held long, 1000 USDT book
             self.assertTrue(st["next_targets"])
             again = sb.run(paths, client=Client(), now_ms=now)
             self.assertEqual(len(again["history"]), len(st["history"]))  # idempotent: no day booked twice
+            can = sb.run(paths, client=Client(), now_ms=now, book="canary")
+            self.assertEqual(set(can["next_targets"]), {"BTC_USDT", "ETH_USDT"})
+            self.assertEqual(can["paper_usdt"], 100.0)
+            self.assertTrue(all(v >= 10.0 for v in can["next_targets_usdt"].values()))
+
+
+class Bookkeeping(unittest.TestCase):
+    def test_weights_drift_with_prices(self):
+        w, port = cta.drift({"A": 0.5}, {"A": 0.10})
+        self.assertAlmostEqual(port, 0.05)
+        self.assertAlmostEqual(w["A"], 0.55 / 1.05)                       # 55 of 105 after A rose 10%
+
+    def test_band_minimum_buy_and_gross_cap(self):
+        zero = {"A": 0.0, "B": 0.0}
+        new, paid, traded = cta.rebalance({"A": 0.30}, {"A": 0.31}, {"A"}, cost=zero)
+        self.assertEqual((new, traded), ({"A": 0.30}, 0.0))               # inside the 2% band
+        new, _, traded = cta.rebalance({}, {"A": 0.05}, {"A"}, equity=100.0, cost=zero)
+        self.assertEqual((new, traded), ({}, 0.0))                        # 5 USDT buy is below the minimum
+        new, _, _ = cta.rebalance({"A": 0.05}, {}, {"A"}, equity=100.0, cost=zero)
+        self.assertEqual(new, {})                                         # small sells are allowed
+        new, _, traded = cta.rebalance({"A": 0.51}, {"A": 0.50, "B": 0.50}, {"A", "B"}, cost=zero)
+        self.assertAlmostEqual(sum(new.values()), 1.0)                    # kept 51% + new 50% re-capped
+        self.assertAlmostEqual(traded, 0.51)
+        new, _, _ = cta.rebalance({"A": 0.3}, {}, set(), cost=zero)
+        self.assertEqual(new, {"A": 0.3})                                 # no price today: cannot trade
+
+    def test_missing_bar_is_marked_not_peeked(self):
+        def rows(skip=None, jump_from=None):
+            out = {}
+            for i in range(131):
+                if i == skip:
+                    continue
+                o = 110.0 if jump_from is not None and i >= jump_from else 100.0
+                out[i * DAY] = {"o": o, "c": o, "ema": o, "vol": 0.5, "age": i, "r20": 0.1, "r60": 0.1, "r120": 0.1}
+            return out
+        data = {"A": rows(skip=125, jump_from=126), "B": rows()}
+        out = cta.simulate(data, "hold", "equal", band=0.0, cost={"A": 0.0, "B": 0.0}, coins=("A", "B"))
+        eq = 1.0
+        for _, r, _, _ in out:
+            eq *= 1 + r
+        self.assertAlmostEqual(eq, 1.05)                                  # half the book in A, A +10% across its gap
 
 
 if __name__ == "__main__":

@@ -137,15 +137,16 @@ def calc(o, h, l, c, v, params=None) -> dict:
     vm = [es[i] / ev[i] if _fin(es[i]) and _fin(ev[i]) and ev[i] > 0 else NAN for i in range(n)]
 
     bull, rev, div, fair = [NAN] * n, [0] * n, [0] * n, [0] * n
-    trend, mfdiv, diamond = [0] * n, [0] * n, [0] * n
+    trend, mfdiv, diamond, cond = [0] * n, [0] * n, [0] * n, [NAN] * n
     dfrom, dto = [NAN] * n, [NAN] * n                 # divergence: previous pivot bar -> new pivot bar
     ob, k = p["ob"], p["pivot"]
     lows, highs, mlows, mhighs, state = [], [], [], [], 0
     for i in range(n):
         vals = (e20[i], e50[i], rsi[i], hist[i], wt1[i], wt2[i], mfi[i], vwap[i])
         if all(_fin(x) for x in vals):
-            bull[i] = float((c[i] > e20[i]) + (e20[i] > e50[i]) + (rsi[i] > 50) + (hist[i] > 0)
-                            + (wt1[i] > wt2[i]) + (mfi[i] > 50) + (c[i] > vwap[i]))
+            bits = (c[i] > e20[i], e20[i] > e50[i], rsi[i] > 50, hist[i] > 0, wt1[i] > wt2[i], mfi[i] > 50, c[i] > vwap[i])
+            bull[i] = float(sum(bits))
+            cond[i] = float(sum(1 << q for q, b in enumerate(bits) if b))   # which conditions hold (bit q)
         if i >= 1 and all(_fin(x) for x in (wt1[i - 1], wt2[i - 1], wt1[i], wt2[i])):
             if wt1[i - 1] <= wt2[i - 1] and wt1[i] > wt2[i] and wt1[i] < -ob:
                 rev[i] = 1
@@ -189,4 +190,4 @@ def calc(o, h, l, c, v, params=None) -> dict:
                 diamond[i] = s
                 break
     return {"wt1": wt1, "wt2": wt2, "mf": mf, "mfi": mfi, "vm": vm, "bull": bull, "rev": rev, "div": div,
-            "dfrom": dfrom, "dto": dto, "fair": fair, "trend": trend, "mfdiv": mfdiv, "diamond": diamond}
+            "dfrom": dfrom, "dto": dto, "fair": fair, "trend": trend, "mfdiv": mfdiv, "diamond": diamond, "cond": cond}

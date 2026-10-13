@@ -272,11 +272,13 @@ const WLOSC = (() => {
     const sv = c.map((x, i) => x > o[i] ? v[i] : x < o[i] ? -v[i] : 0), es = ema(sv, 10), ev = ema(v, 10);
     const vm = c.map((_, i) => fin(es[i]) && fin(ev[i]) && ev[i] > 0 ? es[i] / ev[i] : NaN);
     const bull = NA(n), rev = new Array(n).fill(0), div = new Array(n).fill(0), fair = new Array(n).fill(0);
-    const dfrom = NA(n), dto = NA(n), trend = new Array(n).fill(0), mfdiv = new Array(n).fill(0), diamond = new Array(n).fill(0);
+    const dfrom = NA(n), dto = NA(n), trend = new Array(n).fill(0), mfdiv = new Array(n).fill(0), diamond = new Array(n).fill(0), cond = NA(n);
     const ob = p.ob, k = p.pivot, lows = [], highs = [], mlows = [], mhighs = []; let state = 0;
     for (let i = 0; i < n; i++) {
-      if ([e20[i], e50[i], rsi[i], hist[i], wt1[i], wt2[i], mfi[i], vwap[i]].every(fin))
-        bull[i] = (c[i] > e20[i]) + (e20[i] > e50[i]) + (rsi[i] > 50) + (hist[i] > 0) + (wt1[i] > wt2[i]) + (mfi[i] > 50) + (c[i] > vwap[i]);
+      if ([e20[i], e50[i], rsi[i], hist[i], wt1[i], wt2[i], mfi[i], vwap[i]].every(fin)) {
+        const bits = [c[i] > e20[i], e20[i] > e50[i], rsi[i] > 50, hist[i] > 0, wt1[i] > wt2[i], mfi[i] > 50, c[i] > vwap[i]];
+        bull[i] = bits.reduce((a, b) => a + b, 0);
+        cond[i] = bits.reduce((a, b, q) => a + (b ? 1 << q : 0), 0); }       // which conditions hold (bit q)
       if (i >= 1 && [wt1[i-1], wt2[i-1], wt1[i], wt2[i]].every(fin)) {
         if (wt1[i-1] <= wt2[i-1] && wt1[i] > wt2[i] && wt1[i] < -ob) rev[i] = 1;
         else if (wt1[i-1] >= wt2[i-1] && wt1[i] < wt2[i] && wt1[i] > ob) rev[i] = -1; }
@@ -314,7 +316,7 @@ const WLOSC = (() => {
       for (const s of [1, -1])                                          // diamond shift: momentum dot + divergence within 6 bars
         if (((rev[i] === s && win(div, s, i)) || (div[i] === s && win(rev, s, i))) && !win(diamond, s, i - 1)) { diamond[i] = s; break; }
     }
-    return {wt1, wt2, mf, mfi, vm, bull, rev, div, dfrom, dto, fair, trend, mfdiv, diamond};
+    return {wt1, wt2, mf, mfi, vm, bull, rev, div, dfrom, dto, fair, trend, mfdiv, diamond, cond};
   }
   return {DEFAULTS, calc};
 })();
@@ -393,7 +395,7 @@ const INDICATORS = {
     const tp = d.c.map((c, i) => (c+d.h[i]+d.l[i])/3), o = NaNs(tp.length);
     for (let i = p.length; i < tp.length; i++) { let pos = 0, neg = 0; for (let j = 0; j < p.length; j++) { const k = i-j, f = tp[k]*d.v[k]; if (tp[k] > tp[k-1]) pos += f; else if (tp[k] < tp[k-1]) neg += f; } o[i] = neg ? 100 - 100/(1+pos/neg) : 100; }
     return {lines: [L(o, "#66bb6a")], levels: [20, 80], range: [0, 100]}; }},
-  wlosc: {name: "WL Oscillator", params: Object.assign({mode: "full", score: 0}, WLOSC.DEFAULTS), tall: 1.8,
+  wlosc: {name: "WL Oscillator", params: Object.assign({tips: true, mode: "full", score: 0}, WLOSC.DEFAULTS), tall: 1.8,
     options: {mode: [["full", "Full oscillator"], ["money", "Money mode"]], score: [[0, "True-7 score off"], [1, "True-7 score on"]]},
     calc: (d, p) => ({osc: WLOSC.calc(d.o, d.h, d.l, d.c, d.v, p), oscP: p, levels: p.mode === "money" ? [0] : [-p.ob, 0, p.ob], range: [-125, 125]})},
   willr: {name: "Williams %R", params: {length: 14}, calc: (d, p) => { const hh = TA.hh(d.h, p.length), ll = TA.ll(d.l, p.length);
@@ -401,6 +403,29 @@ const INDICATORS = {
   roc: {name: "Rate of Change", params: {length: 12}, calc: (d, p) => ({lines: [L(d.c.map((c, i) => i >= p.length ? 100*(c/d.c[i-p.length]-1) : NaN), "#8d6e63")], levels: [0]})},
   volume: {name: "Volume", overlay: true, special: "volume", params: {ma: 20}, calc: () => ({})},
 };
+/* WL Oscillator hover help: [glyph, colour, title, explanation] */
+const OSC_C = {teal: "#26e0c0", pink: "#ff3d71", orange: "#ffa726", blue: "#42a5f5", yellow: "#ffd54f"};
+const OSC_HELP = {
+  line: ["line", "both", "Main line", "Teal = above its dotted signal line (momentum up); pink = below (momentum down). A colour flip is a 'ribbon twist'."],
+  cloud: ["cloud", "both", "Money flow cloud", "Money Flow Index (price x volume) centred on 0. Teal above 0 = money flowing in; pink below = money flowing out."],
+  revUp: ["dot", "teal", "Momentum dot (bullish)", "The main line twisted up through its signal while oversold (below the lower dashed line): a possible bottom."],
+  revDn: ["dot", "pink", "Momentum dot (bearish)", "The main line twisted down through its signal while overbought (above the upper dashed line): a possible top."],
+  divUp: ["div", "teal", "Bullish divergence + blue peak-seeker dot", "Price made a lower low but the oscillator made a higher low: selling is losing strength. Drawn once confirmed, 5 candles after the low."],
+  divDn: ["div", "pink", "Bearish divergence + blue peak-seeker dot", "Price made a higher high but the oscillator made a lower high: buying is losing strength. Drawn once confirmed, 5 candles after the high."],
+  mfUp: ["dot", "yellow", "Money-flow divergence (bullish, yellow dot below 0)", "Money is still flowing out, but less than at the previous low while price made a lower low: selling pressure fading."],
+  mfDn: ["dot", "yellow", "Money-flow divergence (bearish, yellow dot above 0)", "Money is still flowing in, but less than at the previous high while price made a higher high: buying pressure fading."],
+  trUp: ["up", "teal", "Uptrend arrow", "The trend rank reached 6-7 of the 7 bullish conditions after having been bearish."],
+  trDn: ["down", "pink", "Downtrend arrow", "The trend rank fell to 0-1 of the 7 bullish conditions after having been bullish."],
+  fairUp: ["sq", "orange", "Orange square, lower (oversold)", "Price closed more than 2 standard deviations below its 50-candle volume-weighted average: stretched low, a reversal zone."],
+  fairDn: ["sq", "orange", "Orange square, upper (overbought)", "Price closed more than 2 standard deviations above its 50-candle volume-weighted average: stretched high, a reversal zone."],
+  diaUp: ["dia", "teal", "Diamond shift (bullish)", "Rare: a bullish momentum dot and a bullish divergence within 6 candles of each other. The strongest bottom marker (about 20 in 3.5 years on BTC 4h)."],
+  diaDn: ["dia", "pink", "Diamond shift (bearish)", "Rare: a bearish momentum dot and a bearish divergence within 6 candles of each other. The strongest top marker."],
+  powUp: ["pow", "teal", "Power bars, top row", "5-7 of the 7 trend conditions are bullish; brighter = more of them agree."],
+  powDn: ["pow", "pink", "Power bars, bottom row", "5-7 of the 7 trend conditions are bearish; brighter = more of them agree."],
+  vol: ["strip", "both", "Volume strip (very bottom)", "Smoothed buy vs sell volume: teal = buyers in control, pink = sellers; brighter = stronger."],
+  seven: ["seven", "teal", "True-7 score (optional)", "All 7 conditions agree (teal 7 = all bullish, pink 7 = all bearish): an extreme that can come before a reversal."],
+};
+const OSC_CONDS = ["price > EMA20", "EMA20 > EMA50", "RSI > 50", "MACD > 0", "line > signal", "MFI > 50", "price > VWAP50"];
 
 /* ============================================================ state */
 const DEFAULT_WAVE = {waves: true, alternates: false, history: true, targets: true, box: true, fibs: true, channels: true, levels: false, pivots: false};
@@ -530,7 +555,7 @@ class Chart {
     const cv = this.canvas, dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
     if (!W || !H) return;
     if (cv.width !== Math.round(W*dpr) || cv.height !== Math.round(H*dpr)) { cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); }
-    const g = this.ctx; g.setTransform(dpr, 0, 0, dpr, 0, 0); this._labelHits = [];
+    const g = this.ctx; g.setTransform(dpr, 0, 0, dpr, 0, 0); this._labelHits = []; this._tipBoxes = []; this._oscTip = null;
     const C = this.C = {bg: css("--bg"), text: css("--text"), muted: css("--muted"), grid: css("--grid"), border: css("--border"), up: css("--up"), down: css("--down"),
       cross: css("--cross"), fib: css("--fib"), target: css("--target"), bad: css("--bad"), level: css("--level"), draw: css("--draw"), alert: css("--alert"), alt: css("--alt"),
       deg: css("--deg-" + S.degree), accent: css("--accent"), panel: css("--panel")};
@@ -577,6 +602,7 @@ class Chart {
     // watermark
     g.save(); g.globalAlpha = 0.05; g.fillStyle = C.text; g.font = "700 48px system-ui"; g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText(this.symbol.replace("_", "/"), D.pw / 2, D.mainH / 2); g.restore();
+    if (this._oscTip) this.drawOscTip(g, D, this._oscTip);               // on top of everything
   }
   niceStep(range, target) { const raw = range / Math.max(1, target), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; }
   priceTicks(D) { const st = this.niceStep(this.yHi - this.yLo, D.mainH / 55), out = []; for (let v = Math.ceil(this.yLo / st) * st; v <= this.yHi; v += st) out.push(v); return out; }
@@ -658,7 +684,18 @@ class Chart {
     const at = Math.min(this.data.n - 1, Math.round(this.mouse ? this.iAt(this.mouse.x) : this.data.n - 1));
     const last = (r.osc ? r.osc.wt1 : r.lines && r.lines[0] ? r.lines[0].v : r.hist || [])[at];
     const extra = r.osc && fin(r.osc.bull[at]) ? `  rank ${r.osc.bull[at]}/7  flow ${fin(r.osc.mf[at]) ? r.osc.mf[at].toFixed(0) : "-"}` : "";
-    g.fillText(`${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}${extra}`, 8, top + 4);
+    const label = `${def.name}${prm ? " (" + prm + ")" : ""}  ${fin(last) ? last.toFixed(Math.abs(last) < 10 ? 3 : 2) : ""}${extra}`;
+    if (r.osc) {                                                        // "Tips" tickbox right after the title (title trimmed if tight)
+      const p = r.oscP || {}, on = p.tips !== false, bx0 = Math.min(D.pw - 56, 8 + g.measureText(label).width + 10), bx1 = bx0 + 50, by0 = top + 3, by1 = top + 17;
+      g.save(); g.beginPath(); g.rect(0, top, bx0 - 4, 18); g.clip(); g.fillText(label, 8, top + 4); g.restore();
+      (this._tipBoxes || (this._tipBoxes = [])).push({x0: bx0, x1: bx1, y0: by0, y1: by1, k: S.indicators.indexOf(cfg)});
+      g.strokeStyle = C.muted; g.lineWidth = 1; g.strokeRect(bx0 + 3.5, by0 + 3.5, 8, 8);
+      if (on) { g.strokeStyle = C.text; g.lineWidth = 1.6; g.beginPath(); g.moveTo(bx0 + 5, by0 + 7.5); g.lineTo(bx0 + 7, by0 + 10); g.lineTo(bx0 + 11, by0 + 4.5); g.stroke(); }
+      g.textBaseline = "middle"; g.fillText("Tips", bx0 + 16, by0 + 7.5);
+      const m = this.mouse;
+      if (on && m && m.y > top && m.y < top + D.subH && m.x < D.pw && !(m.x >= bx0 - 2 && m.x <= bx1 + 2 && m.y <= by1 + 2))
+        this._oscTip = {o: r.osc, p, top, legend: m.y < top + 18, i: Math.max(0, Math.min(this.data.n - 1, Math.round(this.iAt(m.x))))};
+    } else g.fillText(label, 8, top + 4);
     g.textAlign = "left"; g.textBaseline = "middle"; g.fillStyle = C.muted;
     [hi, lo].forEach(v => g.fillText(Math.abs(v) >= 1e5 ? fmtVol(v) : v.toFixed(Math.abs(v) < 10 ? 2 : 0), D.pw + 6, yf(v)));
     if (this.mouse && this.mouse.y > top && this.mouse.y < top + D.subH) this.drawCrossV(g, D, top, top + D.subH);
@@ -686,9 +723,9 @@ class Chart {
     for (let i = lo; i <= hi; i++) if (o.mfdiv[i] && fin(o.mf[i])) {   // money flow divergence: yellow dots
       g.fillStyle = YELLOW; g.beginPath(); g.arc(this.x(i), yf(mfv(i)), r, 0, 7); g.fill(); }
     if (money) return;
-    for (let i = lo; i <= hi; i++) {                                    // power bars: >= 5 of 7 trend conditions agree
+    for (let i = lo; i <= hi; i++) {                                    // power bars: >= 5 of 7 agree; bullish top row, bearish bottom row
       const b = o.bull[i]; if (!fin(b)) continue; const s = Math.max(b, 7 - b); if (s < 5) continue;
-      g.globalAlpha = (s - 4) / 3; g.fillStyle = b >= 5 ? TEAL : PINK; g.fillRect(this.x(i) - sq / 2, top + 19, sq, sq); }
+      g.globalAlpha = (s - 4) / 3; g.fillStyle = b >= 5 ? TEAL : PINK; g.fillRect(this.x(i) - sq / 2, b >= 5 ? top + 19 : bot - 16, sq, sq); }
     g.globalAlpha = 1;
     this.line(g, o.wt2, i0, i1, this.C.muted, 1, [2, 2]);
     g.save(); g.lineWidth = 2.2; g.lineCap = "round"; g.shadowBlur = 7;  // main line with glow: teal over its signal, pink under
@@ -707,14 +744,89 @@ class Chart {
         g.fillStyle = BLUE; g.beginPath(); g.arc(x, top + 30, r, 0, 7); g.fill(); }
       if (o.rev[i]) { g.fillStyle = o.rev[i] > 0 ? TEAL : PINK;          // momentum dot where the ribbon twists
         g.strokeStyle = this.C.bg; g.lineWidth = 1; g.beginPath(); g.arc(x, yf(o.wt1[i]), r + 1, 0, 7); g.fill(); g.stroke(); }
-      if (o.trend[i]) tri(x, o.trend[i] > 0 ? bot - 24 : top + 42, o.trend[i] > 0, o.trend[i] > 0 ? TEAL : PINK, 4);   // trend arrows
-      if (o.fair[i] && o.fair[i] !== o.fair[i - 1]) { g.fillStyle = ORANGE; g.fillRect(x - sq / 2, o.fair[i] > 0 ? bot - 17 : top + 26 + r + 3, sq, sq); }
+      if (o.trend[i]) tri(x, o.trend[i] > 0 ? bot - 32 : top + 42, o.trend[i] > 0, o.trend[i] > 0 ? TEAL : PINK, 4);   // trend arrows
+      if (o.fair[i] && o.fair[i] !== o.fair[i - 1]) { g.fillStyle = ORANGE; g.fillRect(x - sq / 2, o.fair[i] > 0 ? bot - 24 : top + 26 + r + 3, sq, sq); }
       if (o.diamond[i]) { const up = o.diamond[i] > 0, y = yf(o.wt1[i]) + (up ? 14 : -14), s = 6;   // diamond shift
         g.fillStyle = up ? TEAL : PINK; g.strokeStyle = "#ffffff"; g.lineWidth = 1;
         g.beginPath(); g.moveTo(x, y - s); g.lineTo(x + s * 0.75, y); g.lineTo(x, y + s); g.lineTo(x - s * 0.75, y); g.closePath(); g.fill(); g.stroke(); }
       const b = o.bull[i], pb = o.bull[i - 1];                          // True-7 score at extremes, when it changes
       if (p.score && fin(b) && (b === 7 || b === 0) && b !== pb) { g.fillStyle = b === 7 ? TEAL : PINK; g.fillText("7", x, top + 52); }
     }
+  }
+  drawOscGlyph(g, kind, col, x, y) {
+    const c = OSC_C[col] || col, T = OSC_C.teal, P = OSC_C.pink;
+    g.save();
+    if (kind === "line") { g.lineWidth = 2.2; g.strokeStyle = T; g.beginPath(); g.moveTo(x - 7, y + 3); g.lineTo(x, y - 2); g.stroke();
+      g.strokeStyle = P; g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x + 7, y + 3); g.stroke(); }
+    else if (kind === "cloud") { g.fillStyle = T + "aa"; g.fillRect(x - 7, y - 5, 7, 5); g.fillStyle = P + "aa"; g.fillRect(x, y, 7, 5); }
+    else if (kind === "dot") { g.fillStyle = c; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); }
+    else if (kind === "div") { g.strokeStyle = c; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x - 7, y + 4); g.lineTo(x + 2, y); g.stroke();
+      g.fillStyle = OSC_C.blue; g.beginPath(); g.arc(x + 5, y - 4, 2.5, 0, 7); g.fill(); }
+    else if (kind === "up" || kind === "down") { const up = kind === "up", s = 4; g.fillStyle = c; g.beginPath(); g.moveTo(x, up ? y - s : y + s);
+      g.lineTo(x - s, up ? y + s * 0.8 : y - s * 0.8); g.lineTo(x + s, up ? y + s * 0.8 : y - s * 0.8); g.closePath(); g.fill(); }
+    else if (kind === "sq") { g.fillStyle = c; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
+    else if (kind === "dia") { g.fillStyle = c; g.strokeStyle = "#ffffff"; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 4.5, y);
+      g.lineTo(x, y + 6); g.lineTo(x - 4.5, y); g.closePath(); g.fill(); g.stroke(); }
+    else if (kind === "pow") { for (let k = 0; k < 3; k++) { g.globalAlpha = (k + 1) / 3; g.fillStyle = c; g.fillRect(x - 7 + k * 5, y - 2, 4, 4); } }
+    else if (kind === "strip") { g.fillStyle = T; g.fillRect(x - 7, y - 3, 7, 6); g.fillStyle = P; g.fillRect(x, y - 3, 7, 6); }
+    else if (kind === "seven") { g.fillStyle = c; g.font = "bold 11px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("7", x, y); }
+    g.restore();
+  }
+  drawOscTip(g, D, T) {
+    const C = this.C, o = T.o, p = T.p, i = T.i, pad = 8, lh = 14, gx = 22, gap = 12;
+    const cols = T.legend && D.pw > 600 ? 2 : 1, colW = Math.min(360, (D.pw - 24 - (cols - 1) * gap) / cols), W = cols * colW + (cols - 1) * gap;
+    g.save(); g.font = "11px system-ui";
+    const wrap = (txt, w) => { const out = []; let line = "";
+      for (const word of txt.split(" ")) { const t = line ? line + " " + word : word; if (g.measureText(t).width > w && line) { out.push(line); line = word; } else line = t; }
+      if (line) out.push(line); return out; };
+    const top = [], items = [], foot = [];
+    const item = key => { const [glyph, col, title, text] = OSC_HELP[key]; items.push({glyph, col, title, lines: wrap(text, colW - 2 * pad - gx)}); };
+    const f = (v, d = 1) => fin(v) ? v.toFixed(d) : "-";
+    if (T.legend) {
+      top.push({head: true, lines: ["WL Oscillator: what each mark means"]});
+      Object.keys(OSC_HELP).forEach(item);
+      foot.push({dim: true, lines: wrap("Our own build from ChartPrime's public description and docs, not their code. Hover a candle for its marks; untick Tips to hide.", W - 2 * pad)});
+    } else {
+      top.push({head: true, lines: [`${fmtTime(this.data.t[i], this.interval, true)} · WL Oscillator`]});
+      const zone = o.wt1[i] > p.ob ? " · overbought" : o.wt1[i] < -p.ob ? " · oversold" : "";
+      top.push({lines: wrap(`Main line ${f(o.wt1[i])} vs signal ${f(o.wt2[i])}: ${o.wt1[i] > o.wt2[i] ? "teal, momentum up" : "pink, momentum down"}${zone}`, W - 2 * pad)});
+      top.push({lines: wrap(`Money flow ${f(o.mf[i], 0)}: ${o.mf[i] >= 0 ? "money flowing in" : "money flowing out"} · volume: ${o.vm[i] >= 0 ? "buyers" : "sellers"} ${f(Math.abs(o.vm[i]) * 100, 0)}%`, W - 2 * pad)});
+      if (fin(o.bull[i])) top.push({lines: wrap(`Trend rank ${o.bull[i]}/7: ` + OSC_CONDS.map((c, q) => (o.cond[i] & (1 << q) ? "✓ " : "✗ ") + c).join("   "), W - 2 * pad)});
+      const near = this.barW < 8 ? [i, i - 1, i + 1] : [i], has = (arr, v) => near.some(j => arr[j] === v);
+      const starts = v => near.some(j => o.fair[j] === v && o.fair[j - 1] !== v);
+      [[o.diamond, 1, "diaUp"], [o.diamond, -1, "diaDn"], [o.rev, 1, "revUp"], [o.rev, -1, "revDn"], [o.div, 1, "divUp"], [o.div, -1, "divDn"],
+       [o.mfdiv, 1, "mfUp"], [o.mfdiv, -1, "mfDn"], [o.trend, 1, "trUp"], [o.trend, -1, "trDn"]].forEach(([a, v, k]) => { if (has(a, v)) item(k); });
+      if (starts(1)) item("fairUp");
+      if (starts(-1)) item("fairDn");
+      if (o.bull[i] >= 5) item("powUp");
+      if (o.bull[i] <= 2) item("powDn");
+      if (p.score && (o.bull[i] === 7 || o.bull[i] === 0)) item("seven");
+      if (!items.length) foot.push({dim: true, lines: ["No signal marks on this candle."]});
+      foot.push({dim: true, lines: wrap("Hover the title line for the full key · untick Tips to hide.", W - 2 * pad)});
+    }
+    const hOf = r => r.glyph ? lh * (1 + r.lines.length) + 4 : lh * r.lines.length + (r.head ? 5 : 2);
+    const sum = a => a.reduce((s, r) => s + hOf(r), 0), half = sum(items) / cols, colItems = [[], []];
+    let acc = 0; items.forEach(r => { colItems[cols > 1 && acc >= half ? 1 : 0].push(r); acc += hOf(r); });
+    const H = 2 * pad + sum(top) + Math.max(sum(colItems[0]), sum(colItems[1])) + sum(foot) + (items.length ? 4 : 0);
+    const m = this.mouse; let x = m.x + 16, y = m.y - H / 2;
+    if (x + W > D.pw) x = m.x - W - 16;
+    x = Math.max(4, Math.min(D.pw - W - 4, x)); y = Math.max(4, Math.min(D.H - H - 4, y));
+    g.globalAlpha = 0.97; g.fillStyle = C.panel; g.fillRect(x, y, W, H); g.globalAlpha = 1;
+    g.strokeStyle = C.border; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1);
+    g.textAlign = "left"; g.textBaseline = "top";
+    const plain = (r, cx, cy) => { g.font = r.head ? "600 12px system-ui" : "11px system-ui"; g.fillStyle = r.dim ? C.muted : C.text;
+      r.lines.forEach((t, k) => g.fillText(t, cx, cy + lh * k)); };
+    let cy = y + pad;
+    top.forEach(r => { plain(r, x + pad, cy); cy += hOf(r); });
+    const y0 = cy + (items.length ? 4 : 0);
+    colItems.forEach((list, c) => { let yy = y0; const cx = x + pad + c * (colW + gap);
+      list.forEach(r => { this.drawOscGlyph(g, r.glyph, r.col, cx + 8, yy + lh / 2);
+        g.font = "600 11px system-ui"; g.fillStyle = C.text; g.fillText(r.title, cx + gx, yy);
+        g.font = "11px system-ui"; g.fillStyle = C.muted; r.lines.forEach((t, k) => g.fillText(t, cx + gx, yy + lh * (k + 1)));
+        yy += hOf(r); }); });
+    cy = y0 + Math.max(sum(colItems[0]), sum(colItems[1]));
+    foot.forEach(r => { plain(r, x + pad, cy); cy += hOf(r); });
+    g.restore();
   }
   drawCrossV(g, D, a, b) { if (!this.mouse || S.tool === "none") return; g.save(); g.strokeStyle = this.C.cross; g.setLineDash([4, 4]); g.beginPath(); const x = Math.round(this.x(Math.round(this.iAt(this.mouse.x)))) + 0.5; g.moveTo(x, a); g.lineTo(x, b); g.stroke(); g.restore(); }
   hline(g, D, p, color, label, dash, x0 = 0, width = 1) {
@@ -939,6 +1051,9 @@ class Chart {
       if (e.button !== 0 || !this.data) return; if (S.active !== this.idx) setActive(this.idx);
       const m = pos(e), D = this._dims;
       if (m.x > D.pw) { this.drag = {type: "yscale", y: m.y, lo: this.yLo, hi: this.yHi}; this.yAuto = false; return; }
+      const tb = (this._tipBoxes || []).find(b => m.x >= b.x0 && m.x <= b.x1 && m.y >= b.y0 && m.y <= b.y1);
+      if (tb && S.indicators[tb.k]) { const x = S.indicators[tb.k], cur = Object.assign({}, INDICATORS[x.type].params, x.params).tips;
+        x.params = Object.assign({}, x.params, {tips: !cur}); store.set("indicators", S.indicators); renderInd(); redrawAll(); return; }
       if (m.y > D.mainH) { this.drag = {type: "pan", x: m.x, off: this.off}; return; }
       const tool = S.tool, need = TOOL_PTS[tool];
       if (tool === "erase") { const h = this.hitDrawing(m.x, m.y); if (h) { this.drawings.splice(this.drawings.indexOf(h), 1); saveDrawings(); this.draw(); } return; }
@@ -976,7 +1091,8 @@ class Chart {
       if (this.draft && s && !this._measureDone) { this.draft.pts[this.draft.pts.length - 1] = {t: s.t, p: s.p}; }
       this.hoverWave = null;
       for (const h of this._labelHits || []) if (Math.hypot(h.x - m.x, h.y - m.y) <= h.r + 3) { this.hoverWave = h; break; }
-      cv.style.cursor = this.hoverWave ? "pointer" : m.x > (this._dims ? this._dims.pw : 1e9) ? "ns-resize" : "crosshair";
+      const onTip = (this._tipBoxes || []).some(b => m.x >= b.x0 && m.x <= b.x1 && m.y >= b.y0 && m.y <= b.y1);
+      cv.style.cursor = this.hoverWave || onTip ? "pointer" : m.x > (this._dims ? this._dims.pw : 1e9) ? "ns-resize" : "crosshair";
       this.draw(); syncCross(this, m);
     });
     cv.addEventListener("mouseleave", () => { this.mouse = null; this.hoverWave = null; this.draw(); syncCross(this, null); });
@@ -1122,7 +1238,9 @@ function openInd() { $("#indModal").classList.add("show"); $("#indQ").value = ""
 function renderInd() {
   const q = $("#indQ").value.toLowerCase();
   $("#indActive").innerHTML = S.indicators.map((x, k) => { const def = INDICATORS[x.type]; if (!def) return "";
-    const prm = Object.entries(Object.assign({}, def.params, x.params)).map(([n, v]) => def.options && def.options[n]
+    const prm = Object.entries(Object.assign({}, def.params, x.params)).map(([n, v]) => typeof v === "boolean"
+      ? `<label class="small"><input type="checkbox" data-k="${k}" data-p="${esc(n)}"${v ? " checked" : ""}> ${esc(n)}</label>`
+      : def.options && def.options[n]
       ? `<label class="small">${esc(n)} <select data-k="${k}" data-p="${esc(n)}">${def.options[n].map(([ov, ol]) => `<option value="${esc(String(ov))}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select></label>`
       : `<label class="small">${esc(n)} <input data-k="${k}" data-p="${esc(n)}" type="number" step="any" value="${v}" style="width:64px"></label>`).join(" ");
     return `<div class="row card"><b style="flex:1">${esc(def.name)}</b>${prm}<button class="x" data-rm="${k}" title="Remove">&times;</button></div>`; }).join("") || `<div class="muted">None</div>`;
@@ -1133,6 +1251,8 @@ $("#indQ").addEventListener("input", renderInd);
 $("#indList").addEventListener("click", e => { const d = e.target.closest("[data-add]"); if (!d) return; S.indicators.push({type: d.dataset.add, params: {...INDICATORS[d.dataset.add].params}}); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
 $("#indActive").addEventListener("click", e => { const b = e.target.closest("[data-rm]"); if (!b) return; S.indicators.splice(+b.dataset.rm, 1); store.set("indicators", S.indicators); renderInd(); redrawAll(); });
 $("#indActive").addEventListener("change", e => { const i = e.target; if (!i.dataset.p) return;
+  if (i.type === "checkbox") { const x = S.indicators[+i.dataset.k]; x.params = Object.assign({}, x.params, {[i.dataset.p]: i.checked});
+    store.set("indicators", S.indicators); redrawAll(); return; }
   if (i.tagName === "SELECT") { const x = S.indicators[+i.dataset.k], opt = INDICATORS[x.type].options[i.dataset.p];
     x.params = Object.assign({}, x.params, {[i.dataset.p]: typeof opt[0][0] === "number" ? Number(i.value) : i.value});
     store.set("indicators", S.indicators); redrawAll(); return; }

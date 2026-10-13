@@ -208,6 +208,38 @@ def oscillator_forward(bars: list[tuple]) -> dict:
     return {"diamonds": marks, "trades": trades, "summary": summarize_trades([t for t in trades if t["status"] == "closed"])}
 
 
+def trend_forward(client=None, now_ms: int | None = None) -> dict:
+    """Daily EMA50 trend filter (swing/trend.py; passed v1 and the 2017-2023 out-of-sample check) on
+    Pionex's own daily candles: today's state, last flip, and the paper result of following it since
+    FORWARD_START (spot, unleveraged, 7 bps a side). Watch-only: nothing is ordered."""
+    from ..data.store import Bars
+    from ..exchange.pionex_public import PionexPublic
+    from ..strategies.indicators import ema
+    from .trend import backtest, positions
+    client = client or PionexPublic()
+    now_ms = now_ms or int(datetime.now(timezone.utc).timestamp() * 1000)
+    out = {}
+    for sym in ("BTC_USDT", "ETH_USDT"):
+        kl, _ = client.klines(sym, "1D", limit=500)
+        kl = sorted((k for k in kl if k.open_time + 24 * H <= now_ms), key=lambda k: k.open_time)
+        if len(kl) < 60:
+            out[sym] = {"error": "not enough daily candles"}
+            continue
+        d = Bars(sym, "1D", [k.open_time for k in kl], *[[float(getattr(k, f)) for k in kl]
+                                                       for f in ("open", "high", "low", "close", "volume")])
+        e, pos = ema(d.c, 50), positions(d.c, "ema50")
+        flips = [i for i in range(1, len(pos)) if pos[i] != pos[i - 1]]
+        start = next((i for i, t in enumerate(d.t) if t >= _ms(FORWARD_START)), len(d))
+        fwd = backtest(d, "ema50", start=start) if len(d) - start >= 3 else None
+        out[sym] = {"day": _iso(d.t[-1])[:10], "close": d.c[-1], "ema50": e[-1],
+                    "state": "IN (long spot)" if pos[-1] else "OUT (cash)",
+                    "distance_pct": round((d.c[-1] / e[-1] - 1) * 100, 2),
+                    "last_flip": _iso(d.t[flips[-1]])[:10] if flips else None,
+                    "flipped_on_last_close": bool(flips and flips[-1] == len(pos) - 1),
+                    "since_forward_start": None if not fwd else {k: fwd[k] for k in ("total", "max_drawdown", "switches", "days")}}
+    return out
+
+
 def summarize_trades(trades: list[dict]) -> dict:
     vals = [t["net_bps"] for t in trades]
     return {"n": len(vals), "mean_net_bps": round(sum(vals) / len(vals), 1) if vals else None,
@@ -225,6 +257,10 @@ def run(paths) -> dict:
                        "Daily Entry and Chart Hackers are the same presenter, so they are not "
                        "independent. Judge nothing before ~30 scored calls per channel."),
               "summary": summarize(scored), "calls": scored, "oscillator": oscillator_forward(bars)}
+    try:
+        report["trend"] = trend_forward()
+    except Exception as exc:  # noqa: BLE001 - a feed hiccup must not lose the rest of the scorecard
+        report["trend"] = {"error": str(exc)}
     dst = paths.reports / "btc_guidance.json"
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(report, indent=2), encoding="utf-8", newline="\n")

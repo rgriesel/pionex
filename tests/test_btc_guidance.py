@@ -88,5 +88,28 @@ class OscillatorForward(unittest.TestCase):
         self.assertEqual(g.oscillator_forward(rows[:100])["trades"], [])
 
 
+class TrendForward(unittest.TestCase):
+    def test_state_flip_and_forward_result(self):
+        from types import SimpleNamespace
+        day = 24 * H
+        start = g._ms(g.FORWARD_START) - 200 * day
+        closes = [100 * 1.005 ** i for i in range(205)] + [100 * 1.005 ** 204 * 0.97 ** k for k in range(1, 6)]
+        kl = [SimpleNamespace(open_time=start + i * day, open=c, high=c * 1.01, low=c * 0.99, close=c, volume=1.0)
+              for i, c in enumerate(closes)]
+
+        class Client:
+            def klines(self, sym, iv, limit=500):
+                assert iv == "1D"
+                return kl, None
+        now = start + len(kl) * day + 1
+        out = g.trend_forward(Client(), now_ms=now)["BTC_USDT"]
+        self.assertTrue(out["state"].startswith("OUT"))                    # 5 red days of 3% broke the EMA
+        self.assertIsNotNone(out["last_flip"])
+        self.assertLess(out["distance_pct"], 0)
+        self.assertIsNotNone(out["since_forward_start"])
+        out = g.trend_forward(Client(), now_ms=start + len(kl) * day - day + 1)["BTC_USDT"]   # last candle not closed
+        self.assertEqual(out["day"], g._iso(kl[-2].open_time)[:10])
+
+
 if __name__ == "__main__":
     unittest.main()

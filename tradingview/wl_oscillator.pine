@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 // ─────────────────────────────────────────────────────────────────────────────
 // WL Oscillator for TradingView (Wave Lab, personal use)
 //
@@ -12,6 +12,11 @@
 // WL Oscillator (wavelab/index.html, WLOSC); small differences come from
 // TradingView's own built-ins (EMA seeding, pivot ties).
 // Hover any signal mark for what it means (setting: "Hover tips on signals").
+// Checked with TradingView's Pine Editor (v6): no errors or warnings.
+//
+// Install: TradingView -> Pine Editor -> paste this whole file -> Save (keep it
+// private) -> Add to chart. Pick the mode in the indicator's settings (gear).
+// Alerts: Create Alert -> Condition "WL Oscillator" -> pick a signal.
 // ─────────────────────────────────────────────────────────────────────────────
 indicator("WL Oscillator", shorttitle = "WL Osc", overlay = false, max_lines_count = 500, max_labels_count = 500)
 

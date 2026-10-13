@@ -31,7 +31,7 @@ from ..exchange.pionex_public import KLINE_INTERVALS, Kline
 BASE_URL = "https://data.binance.vision/data/spot"
 VENUE = "Binance public spot archive (data.binance.vision) - PROXY VENUE, not Pionex"
 SYMBOLS = {"BTC_USDT": "BTCUSDT", "ETH_USDT": "ETHUSDT"}
-INTERVALS = {"5M": "5m", "60M": "1h"}
+INTERVALS = {"5M": "5m", "60M": "1h", "1D": "1d"}
 # Research may use the proxy only if it tracks Pionex this closely on overlapping bars.
 MIN_OVERLAP_BARS = 2000
 MAX_MEDIAN_CLOSE_DIFF_BPS = 5.0
@@ -106,17 +106,25 @@ def window_start_ms(today: date, months: int = DEFAULT_MONTHS) -> int:
     return _ms(window_start(today, months))
 
 
+PERP_BASE_URL = "https://data.binance.vision/data/futures/um"
+PERP_VENUE = "Binance USD-M perpetual klines archive (data.binance.vision/futures/um) - PROXY VENUE, not Pionex"
+PERP_SYMBOLS = {"BTC_USDT_PERP": "BTCUSDT", "ETH_USDT_PERP": "ETHUSDT"}   # stored beside spot under these keys
+
+
 def fetch(store, symbol: str, interval: str, months: int, today: date, now_ms: int, get=http_get) -> dict:
     """Fill `store` with `months` full months before `today` plus this month's completed days.
-    Periods already complete in the store are skipped, so the daily refresh fetches one file."""
-    raw_sym, raw_iv = SYMBOLS[symbol], INTERVALS[interval]
+    Periods already complete in the store are skipped, so the daily refresh fetches one file.
+    `symbol` is a spot key (SYMBOLS) or a perpetual key (PERP_SYMBOLS, futures archive)."""
+    perp = symbol in PERP_SYMBOLS
+    base = PERP_BASE_URL if perp else BASE_URL
+    raw_sym, raw_iv = (PERP_SYMBOLS if perp else SYMBOLS)[symbol], INTERVALS[interval]
     step = KLINE_INTERVALS[interval]
     first = date(today.year, today.month, 1)
 
     def daily(start, end):
         d, out = start, []
         while d < min(end, today):
-            out.append((f"{BASE_URL}/daily/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{d:%Y-%m-%d}.zip",
+            out.append((f"{base}/daily/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{d:%Y-%m-%d}.zip",
                         d, d + timedelta(days=1), None))
             d += timedelta(days=1)
         return out
@@ -127,7 +135,7 @@ def fetch(store, symbol: str, interval: str, months: int, today: date, now_ms: i
         start = date(y, m + 1, 1)
         end = date(y + (m + 1) // 12, (m + 1) % 12 + 1, 1)
         # A month's archive is published a few days after it ends; until then use its daily files.
-        files.append((f"{BASE_URL}/monthly/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{start:%Y-%m}.zip",
+        files.append((f"{base}/monthly/klines/{raw_sym}/{raw_iv}/{raw_sym}-{raw_iv}-{start:%Y-%m}.zip",
                       start, end, daily(start, end)))
     files += daily(first, today)
     got = skipped = missing = 0

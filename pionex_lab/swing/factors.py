@@ -48,13 +48,13 @@ class Series:
         return sum(xs) / len(xs) if xs else NAN
 
 
-def build(paths):
+def build(paths, symbol="BTC_USDT"):
     from ..data import altdata
     from ..data.proxy import funding_series
     from ..data.store import MarketView
     from ..strategies.indicators import ema
     view = MarketView(paths.proxy_market)
-    b = view.bars("BTC_USDT", "60M")
+    b = view.bars(symbol, "60M")
     close_at = {t + H: c for t, c in zip(b.t, b.c)}                      # price known at each hour's close
     hours = sorted(close_at)
     px = Series(close_at.items())
@@ -63,12 +63,12 @@ def build(paths):
         if hours[k] - hours[k - 1] == H:
             hret[hours[k]] = math.log(close_at[hours[k]] / close_at[hours[k - 1]])
     hr = Series(hret.items())
-    daily = view.bars("BTC_USDT", "1D")
+    daily = view.bars(symbol, "1D")
     e50 = ema(list(daily.c), 50)
     ema_d = Series([(t + D, v) for t, v in zip(daily.t, e50)])         # EMA of a day known after it closes
-    fund = Series(funding_series(view.conn, "BTC_USDT"))
+    fund = Series(funding_series(view.conn, symbol))
     from ..data.proxy import metrics_series
-    met = metrics_series(view.conn, "BTC_USDT")
+    met = metrics_series(view.conn, symbol)
     mets = {f: Series(met.get(f, {}).items()) for f in ("oi_usd", "ls_count", "top_ls_sum", "taker_ls")}
     alt_db = paths.root / "alpha" / "alt.db"
     alt = {}
@@ -76,7 +76,7 @@ def build(paths):
         for name, lag in (("fng", D), ("stables", D), ("fred:DTWEXBGS", D), ("fred:DGS10", D), ("fred:VIXCLS", D),
                           ("fred:NASDAQCOM", D), ("dvol_1h", H)):
             alt[name] = Series(altdata.series(alt_db, name), avail_lag=lag)
-        cb = dict(altdata.series(alt_db, "cb_1h"))
+        cb = dict(altdata.series(alt_db, "cb_1h")) if symbol == "BTC_USDT" else {}
         prem = {t + H: cb[t] / close_at[t + H] - 1 for t in cb if t + H in close_at}
         alt["cb_prem"] = Series(prem.items())
     depth = None
@@ -84,7 +84,7 @@ def build(paths):
     if dpath.exists():
         import sqlite3
         con = sqlite3.connect(dpath)
-        rows = con.execute("SELECT t, pct, depth FROM depth5m WHERE symbol='BTCUSDT' AND pct IN (-1.0, 1.0, -5.0, 5.0)").fetchall()
+        rows = con.execute("SELECT t, pct, depth FROM depth5m WHERE symbol=? AND pct IN (-1.0, 1.0, -5.0, 5.0)", (symbol.replace("_", ""),)).fetchall()
         by = {}
         for t, p, d in rows:
             by.setdefault(t + 300_000, {})[p] = d                            # known at the bucket's close
@@ -258,6 +258,63 @@ def trade_quantiles(preds, hold, q, longonly=False, window=540):
     return {"n": len(nets), "mean_pct": 100 * sum(nets) / len(nets) if nets else None,
             "gross_pct": 100 * (sum(nets) / len(nets) + COST) if nets else None,
             "win": sum(x > 0 for x in nets) / len(nets) if nets else None, "total_pct": 100 * sum(nets) if nets else None}
+
+
+FIXED_RULES = """fixed combination (pre-registered 2026-10-14 00:40 SAST, after BTC screen + ETH replication):
+  score = z(book_imb_1pct) + z(book_imb_5pct) - z(mom_4h) - z(oi_chg_24h), each z from the previous 90
+  days (540 4h points) only; no fitting. Trade when flat in the top (long) / bottom (short) q of the
+  previous 90 days of scores, q = 10% and 5%, hold 4h. Costs: taker 0.12% and maker 0.04% round trip
+  (maker fills not modelled: assumes every limit order fills at its price, which flatters it).
+  BTC (factors were chosen on it) and ETH (replicated, never fitted); whole sample from 2023-04."""
+FIXED = {"book_imb_1pct": 1, "book_imb_5pct": 1, "mom_4h": -1, "oi_chg_24h": -1}
+
+
+def fixed_combo(rows, q, hold=4 * H, cost=COST, longonly=False, window=540):
+    hist = {k: [] for k in FIXED}
+    scores, nets, busy = [], [], -1
+    for T, f, y in rows:
+        z, ok = 0.0, True
+        for k, s in FIXED.items():
+            v = f.get(k)
+            past = hist[k][-window:]
+            if _fin(v):
+                hist[k].append(v)
+            if not _fin(v) or len(past) < 200:
+                ok = False
+                continue
+            m = sum(past) / len(past)
+            sd = math.sqrt(sum((x - m) ** 2 for x in past) / len(past)) or 1.0
+            z += s * (v - m) / sd
+        if not ok:
+            continue
+        ref = sorted(scores[-window:])
+        scores.append(z)
+        if len(ref) < 200 or T < busy or not _fin(y["4h"]):
+            continue
+        hi, lo = ref[int((1 - q) * (len(ref) - 1))], ref[int(q * (len(ref) - 1))]
+        side = 1 if z >= hi else (-1 if z <= lo and not longonly else 0)
+        if side:
+            nets.append((T, side * y["4h"] - cost))
+            busy = T + hold
+    xs = [x for _, x in nets]
+    k3 = len(xs) // 3
+    return {"n": len(xs), "mean_pct": 100 * sum(xs) / len(xs) if xs else None,
+            "win": sum(x > 0 for x in xs) / len(xs) if xs else None, "total_pct": 100 * sum(xs) if xs else None,
+            "t": (sum(xs) / len(xs)) / (math.sqrt(sum((x - sum(xs) / len(xs)) ** 2 for x in xs) / len(xs)) / math.sqrt(len(xs))) if len(xs) > 2 else None,
+            "thirds_pct": [100 * sum(xs[a:b]) for a, b in ((0, k3), (k3, 2 * k3), (2 * k3, len(xs)))]}
+
+
+def run_fixed(paths):
+    rep = {"rules": FIXED_RULES}
+    for sym in ("BTC_USDT", "ETH_USDT"):
+        rows = build(paths, symbol=sym)
+        for q in (0.10, 0.05):
+            for cname, cost in (("taker", COST), ("maker", 2 * 0.0002)):
+                for lo in (False, True):
+                    rep[f"{sym}_q{q}_{cname}_{'long' if lo else 'longshort'}"] = fixed_combo(rows, q, cost=cost, longonly=lo)
+    dst = paths.reports / "factors_fixed_combo.json"
+    dst.write_text(json.dumps(rep, indent=1), encoding="utf-8")
+    return rep
 
 
 def run_micro(paths):

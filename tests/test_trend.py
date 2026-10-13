@@ -35,5 +35,15 @@ class Trend(unittest.TestCase):
         self.assertAlmostEqual(res["total"], (1 - trend.SIDE_COST) - 1)   # entered after the jump, flat after
 
 
+class VolScaled(unittest.TestCase):
+    def test_calm_market_is_full_size_and_wild_market_is_scaled_down(self):
+        import math
+        calm = days([100 * 1.002 ** i for i in range(300)])                 # steady rise: vol ~0
+        self.assertAlmostEqual(trend.vol_scaled(calm, trend.WARMUP)["total"], trend.backtest(calm, "ema50")["total"], places=6)
+        wild = days([100 * 1.002 ** i * (1.08 if i % 2 else 0.95) for i in range(300)])
+        v, p = trend.vol_scaled(wild, trend.WARMUP), trend.backtest(wild, "ema50")
+        self.assertLess(abs(math.log(1 + v["total"])), abs(math.log(1 + p["total"])) + 1e-9)
+
+
 if __name__ == "__main__":
     unittest.main()

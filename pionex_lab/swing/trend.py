@@ -91,6 +91,39 @@ def backtest(d, rule: str, start: int = WARMUP, end: int | None = None, funding=
             "switches": switches, "thirds": thirds, "days": n}
 
 
+def vol_scaled(d, start: int, end: int | None = None, target: float = 0.40, window: int = 30) -> dict:
+    """ema50 with volatility targeting (pre-registered 2026-10-13 after the OOS pass): while IN, hold
+    min(1, target / realised vol) of capital, vol = annualised stdev of the last `window` daily
+    close-to-close returns known at the decision close; the size is reset daily and only changes of
+    size are charged (7 bps a side on the traded fraction). Pass: on BTC and ETH, in both windows,
+    a smaller max drawdown than plain ema50 and a Sharpe at least as high."""
+    c = list(d.c)
+    pos = positions(c, "ema50")
+    eq, cur, rets, held = [1.0], 0.0, [], 0
+    for i in range(max(start, WARMUP), min(end or len(d), len(d)) - 1):
+        j = i - 1
+        rs = [c[q] / c[q - 1] - 1 for q in range(j - window + 1, j + 1)]
+        m = sum(rs) / window
+        vol = math.sqrt(sum((x - m) ** 2 for x in rs) / window * 365.25)
+        want = (min(1.0, target / vol) if vol > 0 else 1.0) if pos[j] else 0.0
+        r = -SIDE_COST * abs(want - cur)
+        cur = want
+        if cur:
+            r += cur * (d.o[i + 1] / d.o[i] - 1)
+            held += 1
+        rets.append(r)
+        eq.append(eq[-1] * (1 + r))
+    n = len(rets)
+    peak, mdd = 1.0, 0.0
+    for v in eq:
+        peak = max(peak, v)
+        mdd = max(mdd, 1 - v / peak)
+    mean = sum(rets) / n
+    sd = math.sqrt(sum((x - mean) ** 2 for x in rets) / n)
+    return {"rule": f"ema50_vol{int(target * 100)}", "total": eq[-1] - 1, "cagr": eq[-1] ** (365.25 / n) - 1,
+            "max_drawdown": mdd, "sharpe": mean / sd * math.sqrt(365.25) if sd else None, "time_in": held / n, "days": n}
+
+
 OOS_RULES = "daily-trend out-of-sample check (pre-registered 2026-10-13, after v1 passed)"
 OOS_END = "2023-04-01"                       # v1 used 2023-04 onward; everything before is unseen
 

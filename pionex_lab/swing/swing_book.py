@@ -7,6 +7,9 @@ Rules (unchanged from cta.py): 10 coins; a coin is IN when at least 2 of its 20/
 are positive (on the last closed daily candle); weight = (40% / N) / 30-day annualised vol, total
 capped at 100%; only weight changes > 2% trade; 0.07% per side on traded weight; rebalanced at the
 00:00 UTC open. Paper capital: 100 USDT from FORWARD_START.
+Two books: "defensive" (the pre-registered vol sizing above) and "growth" (same signals, 1/N per IN
+coin; backtest ~70%/yr, 55% max drawdown, Sharpe 1.25; also beat holding but was not the
+pre-registered variant).
 """
 from __future__ import annotations
 
@@ -28,7 +31,7 @@ def candles(client, sym, now_ms):
     return [(k.open_time, float(k.open), float(k.close)) for k in kl]
 
 
-def targets(series: dict) -> dict:
+def targets(series: dict, sizing: str = "vol") -> dict:
     """series: {sym: [(open_time, open, close)] oldest first, last element = last CLOSED day}."""
     avail, info = [], {}
     for s, rows in series.items():
@@ -42,7 +45,10 @@ def targets(series: dict) -> dict:
         info[s] = {"in": sum(votes) >= 2, "vol": vol, "r20": c[-1] / c[-21] - 1, "r60": c[-1] / c[-61] - 1, "r120": c[-1] / c[-121] - 1}
         avail.append(s)
     n = len(avail)
-    w = {s: (TARGET / n) / info[s]["vol"] for s in avail if info[s]["in"] and info[s]["vol"] > 0} if n else {}
+    if sizing == "equal":                                     # growth book: 1/N per IN coin
+        w = {s: 1.0 / n for s in avail if info[s]["in"]} if n else {}
+    else:
+        w = {s: (TARGET / n) / info[s]["vol"] for s in avail if info[s]["in"] and info[s]["vol"] > 0} if n else {}
     gross = sum(w.values())
     if gross > 1:
         w = {s: v / gross for s, v in w.items()}
@@ -68,13 +74,14 @@ def step(state: dict, day_ms: int, opens: dict, prev_opens: dict, tgt: dict) -> 
     return state
 
 
-def run(paths, client=None, now_ms=None) -> dict:
+def run(paths, client=None, now_ms=None, book="defensive") -> dict:
     from ..exchange.pionex_public import PionexPublic
     client = client or PionexPublic()
     now_ms = now_ms or int(datetime.now(timezone.utc).timestamp() * 1000)
-    path = Path(paths.root) / "swing_book" / "state.json"
+    sizing = {"defensive": "vol", "growth": "equal"}[book]
+    path = Path(paths.root) / "swing_book" / ("state.json" if book == "defensive" else f"state_{book}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
-    state = json.loads(path.read_text()) if path.exists() else {"start": FORWARD_START, "equity": 100.0, "weights": {}}
+    state = json.loads(path.read_text()) if path.exists() else {"start": FORWARD_START, "equity": 100.0, "weights": {}, "book": book}
     series = {s: candles(client, s, now_ms) for s in UNIVERSE}
     start_ms = int(datetime.fromisoformat(FORWARD_START).replace(tzinfo=timezone.utc).timestamp() * 1000)
     days = sorted({r[0] for rows in series.values() for r in rows})
@@ -82,11 +89,11 @@ def run(paths, client=None, now_ms=None) -> dict:
         if d < start_ms or d <= state.get("last_day", 0):
             continue
         hist = {s: [r for r in rows if r[0] < d] for s, rows in series.items()}   # closed days before d
-        tgt = targets(hist)["weights"]
+        tgt = targets(hist, sizing)["weights"]
         opens = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d}
         prev = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d - DAY}
         state = step(state, d, opens, prev, tgt)
-    latest = targets(series)
+    latest = targets(series, sizing)
     state["next_targets"] = {s: round(v, 4) for s, v in latest["weights"].items()}
     state["signals"] = {s: {"in": v["in"], "vol_pct": round(100 * v["vol"], 1), "r20_pct": round(100 * v["r20"], 1),
                             "r60_pct": round(100 * v["r60"], 1), "r120_pct": round(100 * v["r120"], 1)} for s, v in latest["info"].items()}

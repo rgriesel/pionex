@@ -266,6 +266,9 @@ def run(paths) -> dict:
         st = swing_run(paths)
         report["swing_book"] = {k: st.get(k) for k in ("start", "equity", "next_targets", "signals", "updated")}
         report["swing_book"]["last_days"] = st.get("history", [])[-5:]
+        g = swing_run(paths, book="growth")
+        report["swing_book_growth"] = {k: g.get(k) for k in ("start", "equity", "next_targets", "updated")}
+        report["swing_book_growth"]["last_days"] = g.get("history", [])[-5:]
     except Exception as exc:  # noqa: BLE001
         report["swing_book"] = {"error": str(exc)}
     dst = paths.reports / "btc_guidance.json"

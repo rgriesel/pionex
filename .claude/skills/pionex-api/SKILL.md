@@ -62,7 +62,7 @@ Symbols are `BASE_QUOTE` upper case (`BTC_USDT`, `ETH_USDT`); perpetuals `BTC_US
 
 ## Fees, minimum sizes, precision (summary)
 
-- Fees [secondary sources, official fee page not readable]: spot 0.05% per trade side (0.10% round trip), bots add no fee beyond trading fees, futures standard 0.02% maker / 0.05% taker; VIP tiers can lower them (current table unread). The lab assumes 5 bps per side (`assumed_spot_fee_per_side_for_research_only`), `verified_fee_source` is still null. Always add spread and impact, and stress costs 2x.
+- Fees [official fee page, read in a browser 2026-10-14]: spot maker 0.050% / taker 0.050% (0.10% round trip), futures maker 0.020% / taker 0.050%, leveraged tokens 0.100%; bots add no fee beyond trading fees [secondary]; VIP tiers can lower them (current table unread). The lab assumes 5 bps per side (`assumed_spot_fee_per_side_for_research_only`), `verified_fee_source` is still null. Always add spread and impact, and stress costs 2x.
 - Symbol rules come from `/common/symbols`, never hard-code: `basePrecision` = quantity decimals, `quotePrecision` = price decimals, `minAmount` = minimum quote notional (10 USDT on 300 of 324 enabled USDT pairs; 5 or 1 on a few), `minTradeSize`/`maxTradeSize` for LIMIT, `minTradeDumping`/`maxTradeDumping` for MARKET sell, `enable` must be true. BTC_USDT: size step 0.000001, tick 0.01, minimum 10 USDT notional, `buyCeiling` 1.1 / `sellFloor` 0.9.
 - Rate limit: 10 weight/s per IP (public) and per account (private); over it, HTTP 429 and a 60 s ban, +10 s per request while ignoring it. Lab budget 5/s with 1 reserved for exits.
 

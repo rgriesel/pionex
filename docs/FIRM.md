@@ -1,8 +1,10 @@
 # The Pionex lab as a small trading firm
 
-Modelled on dotta's "zero-human trading firm" (Paperclip), built natively in Claude Code: subagents
-with their own model per role, the lab's skill, scheduled routines, and hard limits in code/config.
-Paperclip itself is not installed; it would add a dashboard and budgets on top of the same pieces.
+Since 2026-10-14 the firm runs in **Paperclip** as "Cloudworks Technologies AI trading"
+(http://127.0.0.1:3100, local only; Windows task `Paperclip` starts it at logon). Agents, models,
+instructions and routines are defined in `paperclip/` and created by `py paperclip/setup_company.py`
+(idempotent). The old lab supervisor (task `PionexLab`) is disabled; Wave Lab runs on its own tasks
+`WaveLab` and `WaveLab Alerts`. The tables below describe the roles; Paperclip is the source of truth.
 
 ## Org chart (5 agents + the lead; dotta: start with 5–6 focused agents, not 30)
 
@@ -41,17 +43,10 @@ night; review agents run only on a PASS (dotta: reviews cost tokens; use them wh
 
 ## Routines (full instructions: `docs/ROUTINES.md`)
 
-| Local time | Routine | Runs where |
-|---|---|---|
-| 02:10 | daily review, paper swing books (defensive, growth, canary), guidance scorecard, research cycle | lab supervisor (Windows task; runs even in standby) |
-| 02:53 | nightly lab check | Claude heartbeat |
-| 03:37 | research routine: scout → quant (≤2 tests) → red team on any PASS → log | Claude heartbeat |
-| 07:52 | morning summary for the owner | Claude heartbeat |
-| 21:43 | YouTube BTC calls + guidance scorecard | Claude heartbeat |
-
-The Claude heartbeat (hourly at :11) runs any routine whose time has passed without a stamp, so a
-sleeping PC delays these routines instead of losing them. It needs the Claude app open; the
-dashboard shows each routine's last run and flags missed ones as DUE.
+All routines run in Paperclip (see `docs/ROUTINES.md` for the table): paper books 02:20, research
+03:40, morning report 07:55, YouTube calls 21:45, weekly risk review (Mon) and firm review (Sun).
+Missed runs are caught up when the PC is back. The Paperclip dashboard (http://127.0.0.1:3100)
+shows every run, issue, comment and cost.
 
 ## Current decision (lead, 2026-10-13, after the red team)
 

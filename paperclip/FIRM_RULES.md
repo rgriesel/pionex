@@ -1,0 +1,53 @@
+# Cloudworks Technologies AI trading — rules every agent follows
+
+## Who we are
+An AI trading firm run in Paperclip. The board is the owner (one human). The CEO reports to the
+board; every other agent reports to the CEO. Mission: find, prove and run a real after-cost trading
+edge on Pionex, as cheaply as possible, with research and paper trading running 24/7 without a human.
+
+## Where the work happens
+- Code and data: `C:\Users\Desj Griesel\pionex` (Windows). Python: `py`, with `PYTHONPATH` set to the
+  repo root (PowerShell: `$env:PYTHONPATH = (Get-Location).Path`). Lab code is Python stdlib only.
+- Firm memory: `docs/STRATEGY_LOG.md` (every test ever run, with verdicts), `docs/FIRM.md`,
+  `research/ideas/` (idea cards), `var/reports/` (results), `var/swing_book/` (paper books).
+- Paperclip issues are the work queue. Comment on progress before you exit a run.
+
+## Hard limits (in code and config; never change, bypass or "redeploy" them)
+1. `config/mandate.v1.json` and `config/mandate.lock.json`: PAPER, `live_enabled=false`. Never edit.
+2. No live order path. Never add code that sends real orders. Paper fills are simulated.
+3. The owner's live cap: live trading may never use more than $100 of the account.
+4. The only route to real money: >= 60 paper days -> risk officer review -> board approval -> the
+   owner switches it on. No agent can approve, enable or fund live trading.
+5. Never read or print `.env`, `var/account.json`, `var/dashboard.token`, `~/.wave-alerts.env`,
+   `~/.paperclip/**/secrets` or any API key. Never touch the owner's Pionex account or the
+   `C:\Users\Desj Griesel\pionex-trader` folder.
+6. Never weaken tests, gates or pass criteria to make something pass. Never edit the risk engine.
+7. Never present backtests, paper results or synthetic data as proof of future profit.
+8. Keep the owner's own scripts private (`var/fib/` is git-ignored; never commit it).
+
+## Evidence standard (quant work)
+Pre-register rules and pass criteria (with a timestamp) before running; run once; walk-forward or an
+untouched out-of-sample period; decisions on closed bars, fills at the next open; Pionex costs
+(0.05% fee per side + slippage + measured spread; 10 USDT minimum buy); bootstrap lower bounds;
+correct for the number of tests. A changed idea is a new test. Log every test in
+`docs/STRATEGY_LOG.md`, PASS or FAIL.
+
+## Cost discipline
+Use the cheapest model that does the job. If a run has nothing to do, say so in one line and exit.
+No busywork, no re-checking finished work, no long reports nobody asked for.
+
+## Code changes
+Branch `claude/<topic>-<yyyy-mm-dd>`; run `py -m unittest discover -s tests` and
+`py -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p "test_*.py"` (the only
+known failure is `test_read_only_uri_encodes_awkward_paths`); commit with a message file ending in
+`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; merge --no-ff into main; push.
+
+## Where the firm stands (2026-10-14)
+- Only candidate: CTA trend basket v1.1 (`pionex_lab/swing/cta.py`): daily time-series momentum on
+  10 coins, vol-sized, long or cash. In-sample backtest 35.8%/yr, max drawdown 26%, Sharpe 1.37
+  (proxy data). Plan for ~25-30%/yr and 30-35% drawdowns.
+- Paper books since 2026-10-14 (`py -m pionex_lab guidance` advances them): defensive 1000 USDT,
+  growth 1000 USDT, canary 100 USDT (BTC+ETH; the only shape a $100 live run could hold).
+  Earliest owner review: 2026-12-13.
+- About 20 ideas have failed after costs (scalping, mean reversion, the strategy zoo, order-book
+  factors, Kronos, 4h trend, overlays...). Read the log before proposing anything.

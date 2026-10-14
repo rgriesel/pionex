@@ -136,5 +136,18 @@ class Flow(unittest.TestCase):
         self.assertEqual(self.sent, [])
 
 
+class DirectPionexBars(unittest.TestCase):
+    def test_only_closed_bars_and_limit(self):
+        H = 3_600_000
+
+        class Feed:
+            def candles(self, symbol, interval, limit=500):
+                ts = [T0 + i * H for i in range(5)]                     # last one still open at end_ms
+                return {"t": ts, "o": [1.0] * 5, "h": [2.0] * 5, "l": [0.5] * 5, "c": [1.5] * 5, "v": [9.0] * 5}
+        b = alerts.PionexBars(Feed()).bars("BTC_USDT", "60M", limit=3, end_ms=T0 + 4 * H + 60_000)
+        self.assertEqual(b.t, [T0 + H, T0 + 2 * H, T0 + 3 * H])          # newest closed bar ends at T0+4h
+        self.assertEqual(b.interval_ms, H)
+
+
 if __name__ == "__main__":
     unittest.main()

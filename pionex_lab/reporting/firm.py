@@ -15,18 +15,50 @@ from ..util import PROJECT_ROOT
 BOOKS = (("state.json", "Defensive · 10 coins"), ("state_growth.json", "Growth · 10 coins (comparison)"),
          ("state_canary.json", "Canary · BTC + ETH (the $100 live shape)"))
 PAPER_DAYS_BEFORE_REVIEW = 60
-ROUTINES = (  # session schedules (local time); `out` is the file the routine leaves behind, if any
-    ("02:17", "Paper swing books + BTC/ETH trend check", "swing_book/state.json"),
-    ("02:53", "Nightly paper-lab check", None),
-    ("03:37", "Research: scout → quant → red team → strategy log", "docs/STRATEGY_LOG.md"),
-    ("07:52", "Morning summary for the owner", None),
-    ("21:43", "YouTube BTC calls + guidance scorecard", "reports/btc_guidance.json"),
-)
+# Claude routines (local time). They need the Claude app open and the PC awake; an hourly heartbeat
+# runs any routine whose latest scheduled time has passed without a stamp, so sleep only delays them.
+SESSION_ROUTINES = (("nightly_check", "02:53", "Nightly paper-lab check"),
+                    ("research", "03:37", "Research: scout → quant → red team → strategy log"),
+                    ("morning_summary", "07:52", "Morning summary for the owner"),
+                    ("youtube_calls", "21:43", "YouTube BTC calls + guidance scorecard"))
+SUPERVISOR_JOB = ("02:10", "Lab supervisor (Windows task, runs in standby): daily review, paper swing books, research cycle")
 SERVICES = (("Wave Lab", 8770), ("Pionex Trader panel", 8780))
 
 
-def _iso(ms: float) -> str:
-    return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="seconds")
+def _stamps_path(var: Path) -> Path:
+    return Path(var) / "firm" / "stamps.json"
+
+
+def load_stamps(var: Path) -> dict:
+    try:
+        return json.loads(_stamps_path(var).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def stamp(var: Path, name: str, at: datetime | None = None) -> None:
+    """Record that a routine ran (local time with offset)."""
+    st = load_stamps(var)
+    st[name] = (at or datetime.now().astimezone()).isoformat(timespec="seconds")
+    p = _stamps_path(var)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(st, indent=1), encoding="utf-8")
+
+
+def due(var: Path, now: datetime | None = None) -> list:
+    """Routines whose most recent scheduled time (today, or yesterday if today's is still ahead) has
+    passed with no stamp since. Ordered as in SESSION_ROUTINES (the morning summary after research)."""
+    now = now or datetime.now().astimezone()
+    st, out = load_stamps(var), []
+    for name, at, _ in SESSION_ROUTINES:
+        h, m = map(int, at.split(":"))
+        last_slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if last_slot > now:
+            last_slot -= timedelta(days=1)
+        ran = st.get(name)
+        if ran is None or datetime.fromisoformat(ran) < last_slot:
+            out.append(name)
+    return out
 
 
 def _age_s(path: Path, now_ms: int):
@@ -114,18 +146,17 @@ def firm_status(var: Path, now_ms: int, root: Path = PROJECT_ROOT) -> dict:
     start = min((b["start"] for b in books if b["start"]), default="")
     review = ((datetime.fromisoformat(start) + timedelta(days=PAPER_DAYS_BEFORE_REVIEW)).date().isoformat()
               if start else "")
-    routines = []
-    for at, what, out in ROUTINES:
-        path = (root / out) if out and out.startswith("docs/") else (var / out) if out else None
-        age = _age_s(path, now_ms) if path else None
-        routines.append({"at": at, "what": what,
-                         "last_output": (_iso(now_ms - age * 1000) if age is not None else "reported in chat")})
+    st = load_stamps(var)
+    pending = set(due(var, datetime.fromtimestamp(now_ms / 1000, timezone.utc).astimezone()))
+    routines = [{"at": SUPERVISOR_JOB[0], "what": SUPERVISOR_JOB[1], "last_output": st.get("supervisor_books", "never"),
+                 "due": False}]
+    routines += [{"at": at, "what": what + " (Claude)", "last_output": st.get(name, "never"), "due": name in pending}
+                 for name, at, what in SESSION_ROUTINES]
     procs = [{"what": "Live order-book recorder (Binance spot depth, every 60 s)",
-              "alive": (_age_s(var / "orderbook" / "live.db", now_ms) or 10 ** 9) < 300},
-             {"what": "Kronos forecast test (research; stops when finished)",
-              "alive": (_age_s(var / "kronos" / "forecasts.json", now_ms) or 10 ** 9) < 900}]
+              "alive": (_age_s(var / "orderbook" / "live.db", now_ms) or 10 ** 9) < 300}]
     procs += [{"what": f"{name} (port {port})", "alive": _port_open(port)} for name, port in SERVICES]
     return {"books": books, "review_after": review, "agents": _agents(root), "routines": routines,
             "pipeline": _pipeline(root), "processes": procs,
-            "note": "Paper only: simulated books on Pionex daily candles; no orders are placed. Session routines "
-                    "run only while the Claude session is open. Paper results are not evidence of future profit."}
+            "note": "Paper only: simulated books on Pionex daily candles; no orders are placed. The supervisor job "
+                    "runs even in standby; Claude routines need the app open and the PC awake, and an hourly "
+                    "heartbeat catches up any that were missed. Paper results are not evidence of future profit."}

@@ -270,8 +270,26 @@ def config_path(paths) -> Path:
     return Path(paths.root) / "wave_alerts.json"
 
 
+class PionexBars:
+    """MarketView-like `bars()` read straight from Pionex public klines (same source as the Wave Lab
+    charts), so the alerts no longer need the lab's data collector. Only closed bars are returned."""
+
+    def __init__(self, feed=None):
+        from .feeds import PionexFeed
+        self.feed = feed or PionexFeed(ttl_s=0)
+
+    def bars(self, symbol, interval, limit=None, end_ms=None, complete_only=True):
+        from ..data.store import Bars
+        from ..exchange.pionex_public import KLINE_INTERVALS
+        step = KLINE_INTERVALS[interval]
+        d = self.feed.candles(symbol, interval, (limit or 500) + 1)
+        keep = [i for i, t in enumerate(d["t"]) if end_ms is None or t + step <= end_ms]
+        if limit:
+            keep = keep[-int(limit):]
+        return Bars(symbol, interval, *[[d[k][i] for i in keep] for k in ("t", "o", "h", "l", "c", "v")])
+
+
 def run(paths, stop, once: bool = False) -> int:
-    from ..data.store import MarketView
     cfg_file = config_path(paths)
     if not cfg_file.exists():
         log.info("wave alerts disabled: %s not present", cfg_file)
@@ -281,7 +299,7 @@ def run(paths, stop, once: bool = False) -> int:
     notify = (lambda text: telegram_send(tg, text)) if tg else None
     log.info("wave alerts started: %s %s %s, telegram %s", ",".join(cfg["symbols"]), cfg["interval"], RULES_VERSION,
              "on" if tg else "off (log only)")
-    wa = WaveAlerts(connect(Path(paths.root) / "wave_alerts.db"), MarketView(paths.market), cfg, notify)
+    wa = WaveAlerts(connect(Path(paths.root) / "wave_alerts.db"), PionexBars(), cfg, notify)
     while True:
         for sym, action in wa.step():
             if action not in ("ALREADY_EVALUATED",):

@@ -300,7 +300,14 @@ def run(paths, stop, once: bool = False) -> int:
     log.info("wave alerts started: %s %s %s, telegram %s", ",".join(cfg["symbols"]), cfg["interval"], RULES_VERSION,
              "on" if tg else "off (log only)")
     wa = WaveAlerts(connect(Path(paths.root) / "wave_alerts.db"), PionexBars(), cfg, notify)
+    last_try = time.time()
     while True:
+        if wa.notify is None and time.time() - last_try > 600:      # token file created later: pick it up
+            last_try = time.time()
+            tg = load_telegram(cfg.get("telegram_env_file"))
+            if tg:
+                wa.notify = lambda text, tg=tg: telegram_send(tg, text)
+                log.info("telegram on")
         for sym, action in wa.step():
             if action not in ("ALREADY_EVALUATED",):
                 log.info("%s: %s", sym, action)

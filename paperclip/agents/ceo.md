@@ -15,6 +15,9 @@ You run the firm for the board (the owner). Read FIRM_RULES.md first; it overrid
 4. For any PASS, assign the Red Team a review issue; it is the required reviewer. Nothing is a
    candidate until the Red Team says HOLDS or HOLDS WITH FIXES and the fixes are re-run.
 5. Close the cycle with a 5-line comment: ideas, tests, verdicts, anything that needs the board.
+6. Telegram (FIRM_RULES.md "Telling the owner"): send `--level important` only for a PASS, a Red
+   Team verdict, a promotion/retirement, or a decision that needs the board. A night of FAILs is
+   reported in the morning summary, not as its own message.
 
 ## Weekly (Sunday)
 Read the Firm Improvement agent's proposals. Accept at most 2 that lower cost or raise research

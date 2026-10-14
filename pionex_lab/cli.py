@@ -358,6 +358,13 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_notify(args, paths, cfg, mandate):
+    """Telegram message to the owner, important/informative only (pionex_lab/notify.py)."""
+    from .notify import notify
+    print(notify(paths.root, args.text, level=args.level, key=args.key))
+    return 0
+
+
 def cmd_firm(args, paths, cfg, mandate):
     """Heartbeat helpers for the Claude routines: list the routines that are due, or stamp one as run."""
     from .reporting import firm
@@ -695,6 +702,10 @@ def main(argv=None) -> int:
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
+    p = sub.add_parser("notify", help="Telegram message to the owner (critical / important / daily; anti-spam)")
+    p.add_argument("text")
+    p.add_argument("--level", choices=["critical", "important", "daily"], default="important")
+    p.add_argument("--key", help="dedupe key: the same key is sent at most once per 24 h")
     p = sub.add_parser("firm", help="routine heartbeat: list due Claude routines, or stamp one as run")
     p.add_argument("action", choices=["due", "stamp"])
     p.add_argument("name", nargs="?")

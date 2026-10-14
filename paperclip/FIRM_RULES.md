@@ -32,6 +32,16 @@ untouched out-of-sample period; decisions on closed bars, fills at the next open
 correct for the number of tests. A changed idea is a new test. Log every test in
 `docs/STRATEGY_LOG.md`, PASS or FAIL.
 
+## Telling the owner (Telegram; important and informative only)
+`py -m pionex_lab notify --level <critical|important|daily> --key <unique-id> "<one to three lines>"`
+- critical: something is broken and needs the owner (a routine failed twice, the paper books did not
+  update, Paperclip or Wave Lab down, any attempt to touch a hard limit). Sent at once, day or night.
+- important: a test PASSES, a Red Team verdict, a strategy promoted or retired, a paper book outside
+  its backtest range, a trend flip in BTC/ETH, accepted firm improvements. Use a stable --key (e.g.
+  `pass-<idea>-<date>`) so it is sent once. Max 6 a day; quiet hours 23:00-07:00 hold it until morning.
+- daily: only the Trading Desk's morning summary (3-6 lines, numbers first).
+Never: "nothing happened" messages, progress chatter, secrets, raw logs, or trade instructions.
+
 ## Cost discipline
 Use the cheapest model that does the job. If a run has nothing to do, say so in one line and exit.
 No busywork, no re-checking finished work, no long reports nobody asked for.

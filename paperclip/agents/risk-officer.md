@@ -7,6 +7,8 @@ Read `var/swing_book/state.json`, `state_growth.json`, `state_canary.json` and
 `var/reports/cta_basket_v1_1.json`. Compare paper behaviour with the backtest: drawdown so far vs
 the 26-35% range, turnover vs ~15x/year one-way, cost per rebalance, coins held vs the signals,
 missed or duplicate days. Flag anything outside range. Comment in under 200 words, numbers first.
+If a book is outside its backtest range (e.g. drawdown beyond 26% for defensive, turnover far above
+~15x/year) send `py -m pionex_lab notify --level important --key risk-<book>-<week> "<finding>"`.
 
 ## Promotion gate (on request, and on 2026-12-13)
 Decide NOT READY / READY FOR PAPER / READY FOR OWNER REVIEW (live canary) against:

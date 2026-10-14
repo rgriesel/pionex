@@ -102,10 +102,16 @@ def main():
             a = existing[name]
             patch = {k: body[k] for k in ("title", "capabilities", "reportsTo", "adapterConfig", "runtimeConfig")}
             call("PATCH", f"/agents/{a['id']}", patch)
+            changed = []
             for path, text in body["instructionsBundle"]["files"].items():
+                cur = call("GET", f"/agents/{a['id']}/instructions-bundle/file?path={path}", soft=True) or {}
+                if cur.get("content") == text:
+                    continue
                 call("PUT", f"/agents/{a['id']}/instructions-bundle/file",
-                     {"path": path, "content": text}, soft=True)
-            print("updated agent", name)
+                     {"path": path, "content": text, "baseHash": cur.get("contentHash"),
+                      "baseRevisionId": (cur.get("revision") or {}).get("id")}, soft=True)
+                changed.append(path)
+            print("updated agent", name, ("instructions: " + ", ".join(changed)) if changed else "")
         else:
             a = call("POST", f"/companies/{cid}/agents", body)
             print("created agent", name, a["id"])

@@ -32,9 +32,11 @@ BOOKS = {"defensive": {"sizing": "vol", "coins": UNIVERSE, "usdt": 1000.0, "file
 
 
 def candles(client, sym, now_ms):
+    """Daily candles oldest first; today's unfinished candle is kept with close=None so its 00:00 UTC
+    open can be the rebalance price as soon as it exists (signals only ever use closed candles)."""
     kl, _ = client.klines(sym, "1D", limit=300)
-    kl = sorted((k for k in kl if k.open_time + DAY <= now_ms), key=lambda k: k.open_time)
-    return [(k.open_time, float(k.open), float(k.close)) for k in kl]
+    kl = sorted((k for k in kl if k.open_time <= now_ms), key=lambda k: k.open_time)
+    return [(k.open_time, float(k.open), float(k.close) if k.open_time + DAY <= now_ms else None) for k in kl]
 
 
 def targets(series: dict, sizing: str = "vol") -> dict:
@@ -102,7 +104,7 @@ def run(paths, client=None, now_ms=None, book="defensive") -> dict:
         opens = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d}
         prev = {s: r[1] for s, rows in series.items() for r in rows if r[0] == d - DAY}
         state = step(state, d, opens, prev, tgt, capital)
-    latest = targets(series, sizing)
+    latest = targets({s: [r for r in rows if r[2] is not None] for s, rows in series.items()}, sizing)  # closed only
     state["next_targets"] = {s: round(v, 4) for s, v in latest["weights"].items()}
     state["next_targets_usdt"] = {s: round(v * min(state["equity"], capital), 2) for s, v in latest["weights"].items()}
     state["signals"] = {s: {"in": v["in"], "vol_pct": round(100 * v["vol"], 1), "r20_pct": round(100 * v["r20"], 1),

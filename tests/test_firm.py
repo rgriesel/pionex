@@ -44,7 +44,23 @@ class Firm(unittest.TestCase):
         self.assertEqual(f["pipeline"]["candidates"][0]["strategy"], "Trend basket")
         self.assertEqual([a["role"] for a in f["agents"]], ["lead (main session)", "red-team"])
         self.assertEqual(f["agents"][1]["does"], "Tries to break any PASS.")
-        self.assertEqual(len(f["routines"]), 5)
+        self.assertEqual(len(f["routines"]), 5)                           # supervisor job + 4 Claude routines
+
+    def test_missed_routines_come_due_after_sleep(self):
+        from datetime import datetime, timedelta, timezone
+        from pionex_lab.reporting.firm import due, stamp
+        sast = timezone(timedelta(hours=2))
+        with tempfile.TemporaryDirectory() as d:
+            var = Path(d)
+            ran_evening = datetime(2026, 10, 13, 22, 0, tzinfo=sast)       # everything ran last evening
+            for name in ("nightly_check", "research", "morning_summary", "youtube_calls"):
+                stamp(var, name, ran_evening)
+            self.assertEqual(due(var, datetime(2026, 10, 13, 23, 0, tzinfo=sast)), [])
+            woke = datetime(2026, 10, 14, 9, 40, tzinfo=sast)               # PC slept 00:00-09:34
+            self.assertEqual(due(var, woke), ["nightly_check", "research", "morning_summary"])
+            stamp(var, "research", woke)
+            self.assertNotIn("research", due(var, woke))
+            self.assertIn("youtube_calls", due(var, datetime(2026, 10, 14, 21, 50, tzinfo=sast)))
 
 
 if __name__ == "__main__":

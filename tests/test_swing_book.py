@@ -46,6 +46,24 @@ class Book(unittest.TestCase):
             self.assertTrue(all(v >= 10.0 for v in can["next_targets_usdt"].values()))
 
 
+    def test_todays_open_is_booked_before_the_candle_closes(self):
+        from datetime import datetime, timezone
+        start = int(datetime.fromisoformat(sb.FORWARD_START).replace(tzinfo=timezone.utc).timestamp() * 1000)
+        first = start - 200 * DAY
+        p = [100 * 1.002 ** i for i in range(206)]
+
+        class Client:
+            def klines(self, sym, iv, limit=300):        # 205 candles; the last one opened 1 h ago
+                return [SimpleNamespace(open_time=first + i * DAY, open=p[i], close=p[i + 1] if i < 204 else 999.0)
+                        for i in range(205)], None
+        with tempfile.TemporaryDirectory() as d:
+            now = first + 204 * DAY + 3_600_000
+            st = sb.run(SimpleNamespace(root=Path(d)), client=Client(), now_ms=now, book="canary")
+        self.assertEqual(st["last_day"], first + 204 * DAY)                 # rebalanced at today's open
+        self.assertNotIn(999.0, [v["r20_pct"] for v in st["signals"].values()])
+        self.assertAlmostEqual(st["signals"]["BTC_USDT"]["r20_pct"], round(100 * (1.002 ** 20 - 1), 1))  # closed days only
+
+
 class Bookkeeping(unittest.TestCase):
     def test_weights_drift_with_prices(self):
         w, port = cta.drift({"A": 0.5}, {"A": 0.10})

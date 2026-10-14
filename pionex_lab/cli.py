@@ -358,6 +358,20 @@ def cmd_serve(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_firm(args, paths, cfg, mandate):
+    """Heartbeat helpers for the Claude routines: list the routines that are due, or stamp one as run."""
+    from .reporting import firm
+    if args.action == "due":
+        print(json.dumps(firm.due(paths.root)))
+    else:
+        names = {n for n, _, _ in firm.SESSION_ROUTINES}
+        if args.name not in names:
+            raise SystemExit(f"unknown routine {args.name!r}; one of {sorted(names)}")
+        firm.stamp(paths.root, args.name)
+        print(f"stamped {args.name}")
+    return 0
+
+
 def cmd_guidance(args, paths, cfg, mandate):
     """Forward-only scorecard of the channels' BTC calls (swing/guidance.py). Guidance only, no orders."""
     from .swing import guidance
@@ -600,6 +614,16 @@ def cmd_daily_review(args, paths, cfg, mandate):
               "evidence of a mistake."}
     j.append("DAILY_REVIEW", review, now)
     print(pretty_json(review))
+    # The paper swing books and the guidance scorecard ride on this supervisor job so they advance
+    # even while the PC is in standby (the Claude app's routines are suspended then). Paper only.
+    try:
+        from .reporting.firm import stamp
+        from .swing import guidance
+        rep = guidance.run(paths)
+        stamp(paths.root, "supervisor_books")
+        print("swing books:", {k: (rep.get(k) or {}).get("equity") for k in ("swing_book", "swing_book_growth", "swing_book_canary")})
+    except Exception as exc:  # noqa: BLE001 - the side books must never fail the daily review
+        print(f"swing books not updated: {exc}", file=sys.stderr)
     return 0
 
 
@@ -671,6 +695,9 @@ def main(argv=None) -> int:
     p.add_argument("--once", action="store_true")
     p = sub.add_parser("wave-alerts", help="watch-only Elliott wave entry/close alerts (needs var/wave_alerts.json)")
     p.add_argument("--once", action="store_true")
+    p = sub.add_parser("firm", help="routine heartbeat: list due Claude routines, or stamp one as run")
+    p.add_argument("action", choices=["due", "stamp"])
+    p.add_argument("name", nargs="?")
     p = sub.add_parser("guidance", help="forward-only scorecard of the YouTube channels' BTC calls")
     p.add_argument("--add", help="JSON file with a list of new calls to record first")
     p = sub.add_parser("fetch-proxy",help="download/refresh labelled proxy-venue history (Binance public archive)")

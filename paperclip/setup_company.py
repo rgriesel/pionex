@@ -20,6 +20,9 @@ DESCRIPTION = ("AI trading firm: find, prove and run a real after-cost edge on P
                "Research and paper trading 24/7; live trading only with the owner's approval and never more than $100.")
 TZ = "Africa/Johannesburg"
 RULES = (HERE / "FIRM_RULES.md").read_text(encoding="utf-8")
+# On Windows the ACP engine fails to spawn claude-agent-acp.cmd (Node cannot spawn .cmd without a shell),
+# so agents use the CLI engine with the native claude.exe that the npm package ships.
+CLAUDE_EXE = str(Path.home() / "AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe")
 
 # name, role, title, model, file, heartbeat seconds (0 = off), timeout seconds, capabilities
 AGENTS = [
@@ -57,7 +60,7 @@ ROUTINES = [
 ]
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, soft=False):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(API + path, data=data, method=method, headers={"Content-Type": "application/json"})
     try:
@@ -65,7 +68,11 @@ def call(method, path, body=None):
             raw = r.read()
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as e:
-        raise SystemExit(f"{method} {path} -> HTTP {e.code}: {e.read().decode(errors='replace')[:800]}")
+        msg = f"{method} {path} -> HTTP {e.code}: {e.read().decode(errors='replace')[:800]}"
+        if soft:
+            print("warning:", msg)
+            return None
+        raise SystemExit(msg)
 
 
 def items(x):
@@ -86,7 +93,7 @@ def main():
             "reportsTo": None if role == "ceo" else ids.get("CEO"),
             "adapterType": "claude_local",
             "adapterConfig": {"model": model, "cwd": REPO, "dangerouslySkipPermissions": True,
-                              "timeoutSec": timeout, "graceSec": 30},
+                              "timeoutSec": timeout, "graceSec": 30, "engine": "cli", "command": CLAUDE_EXE},
             "runtimeConfig": {"heartbeat": {"enabled": hb > 0, "intervalSec": hb or 86400}},
             "instructionsBundle": {"files": {"AGENTS.md": (HERE / "agents" / fname).read_text(encoding="utf-8"),
                                              "FIRM_RULES.md": RULES}, "entryFile": "AGENTS.md"},
@@ -97,7 +104,7 @@ def main():
             call("PATCH", f"/agents/{a['id']}", patch)
             for path, text in body["instructionsBundle"]["files"].items():
                 call("PUT", f"/agents/{a['id']}/instructions-bundle/file",
-                     {"path": path, "content": text})
+                     {"path": path, "content": text}, soft=True)
             print("updated agent", name)
         else:
             a = call("POST", f"/companies/{cid}/agents", body)

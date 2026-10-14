@@ -111,12 +111,19 @@ def rebalance(w: dict, tgt: dict, tradable, band=0.02, equity=None, min_buy=MIN_
     return new, paid, traded
 
 
-def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=None, cost=None, coins=UNIVERSE):
+def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=None, cost=None, coins=UNIVERSE,
+             scale=None):
     """Daily loop at each 00:00 UTC open: book held coins' open-to-open returns since their last mark,
     drift the weights, decide targets on yesterday's close, rebalance. Returns
     [(interval start, net return, gross exposure, traded weight)]. `capital` (USDT) turns on the
     minimum-buy rule with the allocation never above `capital` (gains swept, losses kept);
-    None = unconstrained (fractional) as in v1."""
+    None = unconstrained (fractional) as in v1.
+    `scale` (research hook, default None = v1.1 exactly): a function (t, targets, data) -> factor in
+    [0, 1], called on every decision day once the targets (after the 100% gross cap) are known and before
+    the band/rebalance. All target weights are multiplied by the factor, so it can only cut exposure,
+    never add leverage, and it cannot change signals or lookbacks. The function gets a copy of the targets
+    and must use only data up to yesterday's close (keys < t); see swing/overlays.py. A factor outside
+    [0, 1] (or NaN) raises ValueError instead of being clamped silently."""
     days = sorted(set().union(*[set(data[s]) for s in coins]))
     w, mark, out, eq, pend = {}, {}, [], 1.0, None
     for t in days:
@@ -151,6 +158,12 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
         gross = sum(new.values())
         if gross > 1.0:
             new = {s: v / gross for s, v in new.items()}
+        if scale is not None:
+            f = scale(t, dict(new), data)
+            if not (0.0 <= f <= 1.0 + 1e-9):                      # also rejects NaN
+                raise ValueError(f"scale() must return a factor in [0, 1], got {f!r} on {t}")
+            if new and f < 1.0:
+                new = {s: v * f for s, v in new.items()}
         tradable = {s for s in coins if t in data[s]}
         usdt = None if capital is None else capital * min(eq, 1.0)  # allocation capped at `capital` (owner's cap)
         w, paid, traded = rebalance(w, new, tradable, band, usdt, cost=cost)

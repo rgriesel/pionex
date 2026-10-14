@@ -71,6 +71,34 @@ def dvol_1h(start):
     return rows
 
 
+DVOL_FIRST = datetime(2021, 3, 24)       # first day Deribit serves BTC DVOL (probed 2026-10-14: daily data starts here)
+
+
+def dvol_backfill(db_path, first=DVOL_FIRST, series="dvol_1h"):
+    """Fetch hourly DVOL closes from `first` up to (not including) the oldest row already stored and add
+    them to the same series with INSERT OR IGNORE (existing rows are never changed). Writes only to the
+    alt.db at `db_path`. Returns {"fetched", "inserted", "from", "to"} with ms timestamps."""
+    con = sqlite3.connect(db_path)
+    con.executescript(SCHEMA)
+    oldest = con.execute("SELECT MIN(t) FROM alt WHERE series=?", (series,)).fetchone()[0]
+    s, end = _ms(first), (oldest if oldest is not None else int(time.time() * 1000))
+    rows = []
+    while s < end:
+        e = min(s + 1000 * H, end)
+        url = (f"https://www.deribit.com/api/v2/public/get_volatility_index_data?currency=BTC&start_timestamp={s}"
+               f"&end_timestamp={e}&resolution=3600")
+        rows += [(series, int(x[0]), float(x[4])) for x in json.loads(_get(url))["result"]["data"] if int(x[0]) < end]
+        s = e
+        time.sleep(0.2)
+    before = con.execute("SELECT COUNT(*) FROM alt WHERE series=?", (series,)).fetchone()[0]
+    with con:
+        con.executemany("INSERT OR IGNORE INTO alt VALUES(?,?,?)", rows)
+    after = con.execute("SELECT COUNT(*) FROM alt WHERE series=?", (series,)).fetchone()[0]
+    con.close()
+    return {"fetched": len(rows), "inserted": after - before, "from": min((r[1] for r in rows), default=None),
+            "to": max((r[1] for r in rows), default=None)}
+
+
 def stables():
     j = json.loads(_get("https://stablecoins.llama.fi/stablecoincharts/all"))
     return [("stables", int(x["date"]) * 1000, float(x["totalCirculatingUSD"].get("peggedUSD", 0))) for x in j
@@ -110,4 +138,7 @@ def fetch_all(db_path, start=datetime(2023, 1, 1)):
 
 def series(db_path, name):
     con = sqlite3.connect(db_path)
-    return [(t, v) for t, v in con.execute("SELECT t, v FROM alt WHERE series=? ORDER BY t", (name,))]
+    try:
+        return [(t, v) for t, v in con.execute("SELECT t, v FROM alt WHERE series=? ORDER BY t", (name,))]
+    finally:
+        con.close()

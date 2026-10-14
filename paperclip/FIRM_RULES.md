@@ -32,6 +32,20 @@ untouched out-of-sample period; decisions on closed bars, fills at the next open
 correct for the number of tests. A changed idea is a new test. Log every test in
 `docs/STRATEGY_LOG.md`, PASS or FAIL.
 
+## Run protocol (every run)
+1. Quota check first (skip for the Trading Desk's paper-book run): GET
+   `http://127.0.0.1:3100/api/companies/5e6a1546-5971-4f76-afd5-408d94bed26f/costs/quota-windows`.
+   The firm shares the owner's Claude subscription. In the "anthropic" entry, if "Current week" used
+   is >= 85% or "Current session" >= 90%: comment one line ("skipped: quota NN%"), leave the issue
+   open for the next window, and exit.
+2. Work only on the issue that woke you. One concise comment per run: what you did, the result,
+   what is next. No running commentary.
+3. Always leave the issue in a clear state before exiting: `done` when finished, `blocked` with the
+   reason and who must act, or `in_progress` only if you will continue on the next wake.
+4. A PASS is never closed by the agent that produced it: the CEO sets an execution policy on the
+   issue with the Red Team as reviewer (`maxReviewRounds` 2) before it can be closed.
+5. Never create agents or skills; propose them to the CEO, and the board decides.
+
 ## Telling the owner (Telegram; important and informative only)
 `py -m pionex_lab notify --level <critical|important|daily> --key <unique-id> "<one to three lines>"`
 - critical: something is broken and needs the owner (a routine failed twice, the paper books did not

@@ -24,39 +24,51 @@ RULES = (HERE / "FIRM_RULES.md").read_text(encoding="utf-8")
 # so agents use the CLI engine with the native claude.exe that the npm package ships.
 CLAUDE_EXE = str(Path.home() / "AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe")
 
-# name, role, title, model, file, heartbeat seconds (0 = off), timeout seconds, capabilities
+# name, role, title, model, file, timeout seconds, capabilities, run brakes, permissions.
+# Brakes (docs/research/paperclip_best_practices.md C2): the firm shares the owner's Claude subscription,
+# where Paperclip's cent budgets never trip, so every run is capped by turns, effort and a client-side
+# cost estimate, and every agent by a daily run count. Heartbeats are off: routines and assignments wake agents.
+# Permissions (C3): only the CEO may request hires (the board approves); nobody creates skills.
 AGENTS = [
-    ("CEO", "ceo", "Chief Executive Officer", "opus", "ceo.md", 28800, 3600,
-     "Sets priorities, delegates research and testing, decides proposals, reports to the board"),
-    ("Research Scout", "researcher", "Research Scout", "sonnet", "research-scout.md", 0, 3600,
-     "Finds new testable trading ideas; records the YouTube BTC calls"),
-    ("Quant", "engineer", "Quant / Backtester", "sonnet", "quant.md", 0, 7200,
-     "Pre-registered backtests with the lab frameworks; logs every verdict"),
-    ("Red Team", "qa", "Red Team (read-only reviewer)", "opus", "red-team.md", 0, 3600,
-     "Tries to break every PASS: look-ahead, bookkeeping, data, selection, costs"),
-    ("Risk Officer", "general", "Risk Officer (read-only)", "opus", "risk-officer.md", 0, 1800,
-     "Gates paper to live against the written rules and the $100 cap; weekly paper review"),
-    ("Trading Desk", "general", "Trading Desk (operations)", "haiku", "trading-desk.md", 0, 1800,
-     "Runs the paper books daily, health checks, morning report to the board"),
-    ("Firm Improvement", "general", "Chief of Staff (firm improvement)", "sonnet", "firm-improvement.md", 0, 3600,
-     "Weekly review of cost, reliability and research throughput; proposes improvements to the CEO"),
+    ("CEO", "ceo", "Chief Executive Officer", "opus", "ceo.md", 3600,
+     "Sets priorities, delegates research and testing, decides proposals, reports to the board",
+     {"effort": "medium", "turns": 80, "usd": 3, "daily": 8}, (True, True)),
+    ("Research Scout", "researcher", "Research Scout", "sonnet", "research-scout.md", 3600,
+     "Finds new testable trading ideas; records the YouTube BTC calls",
+     {"effort": "medium", "turns": 100, "usd": 2, "daily": 5}, (False, False)),
+    ("Quant", "engineer", "Quant / Backtester", "sonnet", "quant.md", 7200,
+     "Pre-registered backtests with the lab frameworks; logs every verdict",
+     {"effort": None, "turns": 150, "usd": 5, "daily": 10}, (False, True)),
+    ("Red Team", "qa", "Red Team (read-only reviewer)", "opus", "red-team.md", 3600,
+     "Tries to break every PASS: look-ahead, bookkeeping, data, selection, costs",
+     {"effort": None, "turns": 60, "usd": 4, "daily": 4}, (False, False)),
+    ("Risk Officer", "general", "Risk Officer (read-only)", "opus", "risk-officer.md", 1800,
+     "Gates paper to live against the written rules and the $100 cap; weekly paper review",
+     {"effort": "medium", "turns": 40, "usd": 2, "daily": 3}, (False, False)),
+    ("Trading Desk", "general", "Trading Desk (operations)", "haiku", "trading-desk.md", 1800,
+     "Runs the paper books daily, health checks, morning report to the board",
+     {"effort": "low", "turns": 25, "usd": 0.5, "daily": 6}, (False, True)),
+    ("Firm Improvement", "general", "Chief of Staff (firm improvement)", "sonnet", "firm-improvement.md", 3600,
+     "Weekly review of cost, reliability and research throughput; proposes improvements to the CEO",
+     {"effort": "medium", "turns": 60, "usd": 2, "daily": 3}, (False, True)),
 ]
 
-# title, assignee, cron (local time), what to do
+# title, assignee, cron (local time), what to do, catch-up policy after an outage or sleep
+# (cheap, time-critical routines catch up; expensive judgement routines skip to the next window)
 ROUTINES = [
     ("Paper books & daily check", "Trading Desk", "20 2 * * *",
-     "Follow 'Paper books' and 'Health' in your AGENTS.md."),
+     "Follow 'Paper books' and 'Health' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("Nightly research cycle", "CEO", "40 3 * * *",
      "Follow 'Nightly research cycle' in your AGENTS.md: delegate idea cards to the Research Scout, "
-     "pick at most 2 for the Quant, Red Team on any PASS, close with a 5-line summary."),
+     "pick at most 2 for the Quant, Red Team on any PASS, close with a 5-line summary.", "skip_missed"),
     ("Morning report to the board", "Trading Desk", "55 7 * * *",
-     "Follow 'Morning report to the board' in your AGENTS.md."),
+     "Follow 'Morning report to the board' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("YouTube BTC calls", "Research Scout", "45 21 * * *",
-     "Follow 'YouTube BTC calls' in your AGENTS.md."),
+     "Follow 'YouTube BTC calls' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("Weekly risk review of the paper books", "Risk Officer", "5 9 * * 1",
-     "Follow 'Weekly paper review' in your AGENTS.md."),
+     "Follow 'Weekly paper review' in your AGENTS.md.", "skip_missed"),
     ("Weekly firm review & improvement", "Firm Improvement", "5 10 * * 0",
-     "Follow 'Weekly review' in your AGENTS.md; address the proposals to the CEO."),
+     "Follow 'Weekly review' in your AGENTS.md; address the proposals to the CEO.", "skip_missed"),
 ]
 
 
@@ -85,16 +97,21 @@ def main():
         company = call("POST", "/companies", {"name": COMPANY, "description": DESCRIPTION})
         print("created company", company["id"])
     cid = company["id"]
+    call("PATCH", f"/companies/{cid}", {"requireBoardApprovalForNewAgents": True}, soft=True)
     existing = {a["name"]: a for a in items(call("GET", f"/companies/{cid}/agents"))}
     ids = {}
-    for name, role, title, model, fname, hb, timeout, caps in AGENTS:
+    for name, role, title, model, fname, timeout, caps, brake, (may_hire, may_assign) in AGENTS:
+        adapter = {"model": model, "cwd": REPO, "dangerouslySkipPermissions": True, "timeoutSec": timeout,
+                   "graceSec": 30, "engine": "cli", "command": CLAUDE_EXE, "maxTurnsPerRun": brake["turns"],
+                   "extraArgs": ["--max-budget-usd", str(brake["usd"])]}
+        if brake["effort"]:
+            adapter["effort"] = brake["effort"]
         body = {
             "name": name, "role": role, "title": title, "capabilities": caps,
             "reportsTo": None if role == "ceo" else ids.get("CEO"),
             "adapterType": "claude_local",
-            "adapterConfig": {"model": model, "cwd": REPO, "dangerouslySkipPermissions": True,
-                              "timeoutSec": timeout, "graceSec": 30, "engine": "cli", "command": CLAUDE_EXE},
-            "runtimeConfig": {"heartbeat": {"enabled": hb > 0, "intervalSec": hb or 86400}},
+            "adapterConfig": adapter,
+            "runtimeConfig": {"heartbeat": {"enabled": False, "intervalSec": 86400, "maxDailyRuns": brake["daily"]}},
             "instructionsBundle": {"files": {"AGENTS.md": (HERE / "agents" / fname).read_text(encoding="utf-8"),
                                              "FIRM_RULES.md": RULES}, "entryFile": "AGENTS.md"},
         }
@@ -116,14 +133,21 @@ def main():
             a = call("POST", f"/companies/{cid}/agents", body)
             print("created agent", name, a["id"])
         ids[name] = a["id"]
+        call("PATCH", f"/agents/{a['id']}/permissions",
+             {"canCreateAgents": may_hire, "canAssignTasks": may_assign, "canCreateSkills": False}, soft=True)
     have = {r["title"]: r for r in items(call("GET", f"/companies/{cid}/routines"))}
-    for title, who, cron, what in ROUTINES:
+    for title, who, cron, what, catch_up in ROUTINES:
+        spec = {"assigneeAgentId": ids[who], "description": what, "concurrencyPolicy": "coalesce_if_active",
+                "catchUpPolicy": catch_up}
         if title in have:
-            print("routine exists", title)
+            r = have[title]
+            call("PATCH", f"/routines/{r['id']}", spec, soft=True)
+            for t in r.get("triggers") or []:
+                if t.get("kind") == "schedule" and (t.get("cronExpression") != cron or t.get("timezone") != TZ):
+                    call("PATCH", f"/routine-triggers/{t['id']}", {"cronExpression": cron, "timezone": TZ}, soft=True)
+            print("updated routine", title, cron, catch_up)
             continue
-        r = call("POST", f"/companies/{cid}/routines", {
-            "title": title, "assigneeAgentId": ids[who], "description": what, "priority": "medium",
-            "concurrencyPolicy": "coalesce_if_active", "catchUpPolicy": "enqueue_missed_with_cap"})
+        r = call("POST", f"/companies/{cid}/routines", {"title": title, "priority": "medium", **spec})
         call("POST", f"/routines/{r['id']}/triggers", {"kind": "schedule", "label": cron, "enabled": True,
                                                        "cronExpression": cron, "timezone": TZ})
         print("created routine", title, cron)

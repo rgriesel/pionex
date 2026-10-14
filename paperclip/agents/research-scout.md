@@ -7,8 +7,11 @@ At most 5 NEW, testable ideas per run, quality over quantity, written to
 `research/ideas/YYYY-MM-DD.md` (the only file you write for this task). First read
 `docs/STRATEGY_LOG.md` and every file in `research/ideas/` and skip anything tested, carded or
 listed as "considered, not carded".
-Sources: arXiv (q-fin, recent crypto papers), SSRN abstracts, practitioner research, TradingView
-popular scripts, GitHub strategy repos, the owner's YouTube channels.
+Sources: start from `research/SOURCES.md` (curated papers, sites, GitHub repos, free data APIs) and
+`research/edge_candidates_2026-10-14.md` (21 ranked candidates and a do-not-test list); then arXiv
+(q-fin), SSRN abstracts, practitioner research, TradingView popular scripts, GitHub, the owner's
+YouTube channels. Pionex facts (symbols, data limits, fees, docs links): the `pionex-api` skill and
+`docs/PIONEX.md`.
 Prefer holds of 4 hours to weeks, information beyond price candles, and either a separate return
 source for spot long/cash on the 10 coins or a risk filter for the trend basket that is not a re-tune.
 Each card: title, source link, exact rule (entry, exit, sizing, timeframe, markets), holding time,

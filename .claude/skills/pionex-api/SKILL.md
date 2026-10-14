@@ -20,7 +20,7 @@ Verified live on 2026-10-14. Detailed material is in `references/`; load only th
 
 | Need | Use |
 |---|---|
-| Latest quote, spread | `PionexPublic().book_ticker("BTC_USDT")` (live) or `MarketView(...).latest_book(sym)` (stored, 1 s cadence, BTC/ETH) |
+| Latest quote, spread | `PionexPublic().book_ticker("BTC_USDT")` (live) (`MarketView(...).latest_book(sym)` is stored data that stopped when the collector was retired on 2026-10-14) |
 | Daily candles, any pair | `PionexPublic().klines(sym, "1D", end_time, 500)` and page backwards (Pionex 1D BTC/ETH starts 2017-10-26) |
 | 5M / 60M candles BTC/ETH | recent: `PionexPublic().klines(sym, "60M", end_time, 500)` paged back (about 10,000 bars). `MarketView(Paths.default().market)` holds collected bars (5M 2026-08-26, 60M 2025-08-09) but the collector was retired on 2026-10-14, so it stops there |
 | Longer 5M/60M history | `var/proxy_market.db` = Binance proxy, labelled and tracking-checked, never mixed into `market.db` |

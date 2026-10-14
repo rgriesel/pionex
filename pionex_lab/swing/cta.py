@@ -74,6 +74,8 @@ def signal(row, rule):
     if rule == "tsmom_vote":
         votes = [row[k] > 0 for k in ("r20", "r60", "r120") if row[k] == row[k]]
         return len(votes) == 3 and sum(votes) >= 2
+    if rule == "donchian":                                        # swing/donchian.py: row["dc"] = share of channels long
+        return row.get("dc", 0.0) > 0
     return True                                                   # "hold"
 
 
@@ -112,7 +114,7 @@ def rebalance(w: dict, tgt: dict, tradable, band=0.02, equity=None, min_buy=MIN_
 
 
 def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=None, cost=None, coins=UNIVERSE,
-             scale=None):
+             scale=None, trace=None):
     """Daily loop at each 00:00 UTC open: book held coins' open-to-open returns since their last mark,
     drift the weights, decide targets on yesterday's close, rebalance. Returns
     [(interval start, net return, gross exposure, traded weight)]. `capital` (USDT) turns on the
@@ -123,7 +125,10 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
     the band/rebalance. All target weights are multiplied by the factor, so it can only cut exposure,
     never add leverage, and it cannot change signals or lookbacks. The function gets a copy of the targets
     and must use only data up to yesterday's close (keys < t); see swing/overlays.py. A factor outside
-    [0, 1] (or NaN) raises ValueError instead of being clamped silently."""
+    [0, 1] (or NaN) raises ValueError instead of being clamped silently.
+    `trace` (research hook, default None): a list that receives (interval start, {coin: weight * return})
+    for each booked day (before costs), for per-coin attribution. Rule "donchian" multiplies each target
+    by row["dc"] (the share of long channels, swing/donchian.py); other rules are untouched."""
     days = sorted(set().union(*[set(data[s]) for s in coins]))
     w, mark, out, eq, pend = {}, {}, [], 1.0, None
     for t in days:
@@ -132,6 +137,8 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
             if t in data[s]:                                      # a held coin without a bar keeps its mark
                 rets[s] = data[s][t]["o"] / mark[s] - 1
                 mark[s] = data[s][t]["o"]
+        if trace is not None and w:
+            trace.append((t, {s: v * rets.get(s, 0.0) for s, v in w.items()}))
         w, port = drift(w, rets)
         if pend:
             t0, paid, gross, traded = pend
@@ -155,6 +162,8 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
                 new[s] = (target / n) / row["vol"]
             else:
                 new[s] = 1.0 / n
+            if rule == "donchian":
+                new[s] *= row["dc"]
         gross = sum(new.values())
         if gross > 1.0:
             new = {s: v / gross for s, v in new.items()}

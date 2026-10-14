@@ -45,6 +45,13 @@ def stamp(var: Path, name: str, at: datetime | None = None) -> None:
     p.write_text(json.dumps(st, indent=1), encoding="utf-8")
 
 
+def heartbeat_expiring(var: Path, now: datetime | None = None, days: float = 6.0) -> bool:
+    """The heartbeat cron expires after 7 days; renew it once its `heartbeat` stamp is `days` old."""
+    ran = load_stamps(var).get("heartbeat")
+    now = now or datetime.now().astimezone()
+    return ran is None or now - datetime.fromisoformat(ran) >= timedelta(days=days)
+
+
 def due(var: Path, now: datetime | None = None) -> list:
     """Routines whose most recent scheduled time (today, or yesterday if today's is still ahead) has
     passed with no stamp since. Ordered as in SESSION_ROUTINES (the morning summary after research)."""

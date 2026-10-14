@@ -62,6 +62,17 @@ class Firm(unittest.TestCase):
             self.assertNotIn("research", due(var, woke))
             self.assertIn("youtube_calls", due(var, datetime(2026, 10, 14, 21, 50, tzinfo=sast)))
 
+    def test_heartbeat_renewal_before_the_7_day_expiry(self):
+        from datetime import datetime, timedelta, timezone
+        from pionex_lab.reporting.firm import heartbeat_expiring, stamp
+        sast = timezone(timedelta(hours=2))
+        with tempfile.TemporaryDirectory() as d:
+            var = Path(d)
+            self.assertTrue(heartbeat_expiring(var))                         # never stamped
+            stamp(var, "heartbeat", datetime(2026, 10, 14, 10, 0, tzinfo=sast))
+            self.assertFalse(heartbeat_expiring(var, datetime(2026, 10, 19, 10, 0, tzinfo=sast)))
+            self.assertTrue(heartbeat_expiring(var, datetime(2026, 10, 20, 10, 0, tzinfo=sast)))
+
 
 if __name__ == "__main__":
     unittest.main()

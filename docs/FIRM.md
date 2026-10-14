@@ -39,15 +39,19 @@ night; review agents run only on a PASS (dotta: reviews cost tokens; use them wh
   2026-10-10 (mandate/lock edits, `.env`/secrets reads, `review-latch`), so agents are blocked by the
   harness, not only by instructions.
 
-## Routines (session schedules; they stop if the Claude session closes, renewed every 7 days)
+## Routines (full instructions: `docs/ROUTINES.md`)
 
-| Local time | Routine |
-|---|---|
-| 02:17 | trend check: paper swing books (defensive + growth), BTC/ETH EMA50 state |
-| 02:53 | nightly lab check (paper engine, research cycle results) |
-| 03:37 | research routine: scout → quant (≤2 tests) → red team on any PASS → log |
-| 07:52 | morning summary for the owner |
-| 21:43 | YouTube BTC calls + guidance scorecard |
+| Local time | Routine | Runs where |
+|---|---|---|
+| 02:10 | daily review, paper swing books (defensive, growth, canary), guidance scorecard, research cycle | lab supervisor (Windows task; runs even in standby) |
+| 02:53 | nightly lab check | Claude heartbeat |
+| 03:37 | research routine: scout → quant (≤2 tests) → red team on any PASS → log | Claude heartbeat |
+| 07:52 | morning summary for the owner | Claude heartbeat |
+| 21:43 | YouTube BTC calls + guidance scorecard | Claude heartbeat |
+
+The Claude heartbeat (hourly at :11) runs any routine whose time has passed without a stamp, so a
+sleeping PC delays these routines instead of losing them. It needs the Claude app open; the
+dashboard shows each routine's last run and flags missed ones as DUE.
 
 ## Current decision (lead, 2026-10-13, after the red team)
 

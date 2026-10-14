@@ -362,9 +362,9 @@ def cmd_firm(args, paths, cfg, mandate):
     """Heartbeat helpers for the Claude routines: list the routines that are due, or stamp one as run."""
     from .reporting import firm
     if args.action == "due":
-        print(json.dumps(firm.due(paths.root)))
+        print(json.dumps(firm.due(paths.root) + (["renew_heartbeat"] if firm.heartbeat_expiring(paths.root) else [])))
     else:
-        names = {n for n, _, _ in firm.SESSION_ROUTINES}
+        names = {n for n, _, _ in firm.SESSION_ROUTINES} | {"heartbeat"}
         if args.name not in names:
             raise SystemExit(f"unknown routine {args.name!r}; one of {sorted(names)}")
         firm.stamp(paths.root, args.name)

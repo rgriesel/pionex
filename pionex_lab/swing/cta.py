@@ -114,7 +114,7 @@ def rebalance(w: dict, tgt: dict, tradable, band=0.02, equity=None, min_buy=MIN_
 
 
 def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=None, cost=None, coins=UNIVERSE,
-             scale=None, trace=None):
+             scale=None, trace=None, universe=None, haircut=0.0):
     """Daily loop at each 00:00 UTC open: book held coins' open-to-open returns since their last mark,
     drift the weights, decide targets on yesterday's close, rebalance. Returns
     [(interval start, net return, gross exposure, traded weight)]. `capital` (USDT) turns on the
@@ -128,15 +128,24 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
     [0, 1] (or NaN) raises ValueError instead of being clamped silently.
     `trace` (research hook, default None): a list that receives (interval start, {coin: weight * return})
     for each booked day (before costs), for per-coin attribution. Rule "donchian" multiplies each target
-    by row["dc"] (the share of long channels, swing/donchian.py); other rules are untouched."""
+    by row["dc"] (the share of long channels, swing/donchian.py); other rules are untouched.
+    `universe` (research hook, default None = v1.1 exactly): a function t -> set of coins allowed that day (swing/pit.py,
+    point-in-time top-N by liquidity); only those coins are decidable and count in N, so a held coin that drops out
+    gets target 0 and is closed at the next open. `haircut` (research hook, default 0 = a held coin whose bars end keeps
+    its last mark): the share of a held coin's value lost on the first day after its last bar (stress run)."""
     days = sorted(set().union(*[set(data[s]) for s in coins]))
     w, mark, out, eq, pend = {}, {}, [], 1.0, None
+    last = {s: max(data[s]) for s in coins if data[s]} if haircut else {}
+    dead = set()
     for t in days:
         rets = {}
         for s in w:
             if t in data[s]:                                      # a held coin without a bar keeps its mark
                 rets[s] = data[s][t]["o"] / mark[s] - 1
                 mark[s] = data[s][t]["o"]
+            elif haircut and s not in dead and t > last[s]:       # bars ended while held: one-off loss
+                rets[s] = -haircut
+                dead.add(s)
         if trace is not None and w:
             trace.append((t, {s: v * rets.get(s, 0.0) for s, v in w.items()}))
         w, port = drift(w, rets)
@@ -147,7 +156,9 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
             if t0 >= start_ms:
                 out.append((t0, r, gross, traded))
             pend = None
-        avail = [s for s in coins if t in data[s] and t - DAY in data[s] and data[s][t - DAY]["age"] >= 120]
+        allowed = None if universe is None else universe(t)
+        avail = [s for s in coins if (allowed is None or s in allowed) and t in data[s] and t - DAY in data[s]
+                 and data[s][t - DAY]["age"] >= 120]
         if not avail:
             if w:                                                 # nothing decidable today: keep holding
                 pend = (t, 0.0, sum(w.values()), 0.0)

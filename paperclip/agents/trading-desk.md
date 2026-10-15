@@ -8,7 +8,10 @@ run the commands, read the numbers, report. You may write only `docs/status/YYYY
    00:00 UTC open and refreshes the BTC/ETH trend and the YouTube scorecard).
 2. From `var/reports/btc_guidance.json` comment: each book's equity vs start (1000 / 1000 / 100
    USDT), today's return and cost, coins IN/out and any flip, BTC/ETH EMA50 state and any flip.
-3. If the command fails, retry once; if it still fails, comment the error, assign the CEO and send
+   Then `py -m pionex_lab record-daily` (stores the data that cannot be downloaded later: Deribit
+   option IV/skew, Pionex spreads, Binance premium index, Coinbase premium). Mention in one line how
+   many rows it stored.
+3. If a command fails, retry once; if it still fails, comment the error, assign the CEO and send
    `py -m pionex_lab notify --level critical --key books-fail-<date> "Paper books did not update: <error>"`.
 4. If BTC or ETH flipped IN/OUT on the daily trend, send one `--level important --key flip-<coin>-<date>`
    message (coin, new state, close vs EMA50).

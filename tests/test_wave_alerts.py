@@ -136,6 +136,31 @@ class Flow(unittest.TestCase):
         self.assertEqual(self.sent, [])
 
 
+class SurvivesNetworkDrops(unittest.TestCase):
+    def test_a_failing_step_does_not_end_the_loop(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        class Stop:
+            def __init__(self):
+                self.n = 0
+
+            def wait(self, s):
+                self.n += 1
+                return self.n >= 2                                   # two polls, then stop
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:   # run() keeps its sqlite file open
+            paths = SimpleNamespace(root=Path(d))
+            (Path(d) / "wave_alerts.json").write_text(json.dumps({"symbols": ["BTC_USDT"]}), encoding="utf-8")
+            with mock.patch.object(alerts, "config_path", return_value=Path(d) / "wave_alerts.json"), \
+                    mock.patch.object(alerts.WaveAlerts, "step", side_effect=OSError("network down")), \
+                    mock.patch.object(alerts, "PionexBars", return_value=None):
+                stop = Stop()
+                self.assertEqual(alerts.run(paths, stop), 0)
+                self.assertEqual(stop.n, 2)                          # kept polling after the error
+
+
 class DirectPionexBars(unittest.TestCase):
     def test_only_closed_bars_and_limit(self):
         H = 3_600_000

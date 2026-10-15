@@ -59,9 +59,12 @@ shows every run, issue, comment and cost.
   long trends pay for the short ones, so they must not be cut early.
 - **Why not more aggressive:** the growth variant (equal sizing) made more in backtest (68%/yr) but
   with a 55% drawdown; it runs as a paper comparison only.
-- **What to expect (planning range, not a forecast):** the backtest is in-sample (35.8%/yr, Sharpe
-  1.37, drawdown 26%). The red team's discount for that: plan for roughly 25–30%/yr, Sharpe 1.0–1.2,
-  and drawdowns of 30–35%. Long flat or losing stretches in sideways markets are normal for trend
+- **What to expect (planning range, not a forecast):** the backtest on today's 10 coins is in-sample
+  (35.8%/yr, Sharpe 1.37, drawdown 26%). The survivorship-free test (C2, 2026-10-15: the same rules on
+  whatever was liquid at the time, dead coins included) gives **~25%/yr, Sharpe ~1.06, drawdown ~30%**
+  (0.88 Sharpe at 4x costs): survivorship was worth ~0.35 Sharpe. Plan for 20–25%/yr, Sharpe ~1.0,
+  drawdowns of 30–35%. The published Donchian design (C1) matches v1.1 on the same coins (Sharpe 1.36,
+  DD 20.5%, 38% of the turnover; correlation 0.93), so the edge is the trend family, not our exact rules. Long flat or losing stretches in sideways markets are normal for trend
   following.
 - **Paper books (from 2026-10-14, 00:00 UTC):** defensive 1000 USDT (10 coins), growth 1000 USDT
   (comparison), canary 100 USDT (BTC + ETH only). 1000 is used because at 100 USDT most coin

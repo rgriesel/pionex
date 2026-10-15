@@ -21,3 +21,13 @@ Retired on 2026-10-14: the Claude-session crons (they never fire while the PC sl
 closed), the `PionexLab` supervisor (collector, intraday paper engine, lab dashboard on 8765, account
 view), the live order-book recorder and the Pionex Trader panel. `pionex_lab firm due|stamp` is no
 longer used.
+
+## Keeping it running (2026-10-15)
+This laptop uses Modern Standby: when the screen times out, Windows freezes background programs. On
+2026-10-14 that stopped the firm 22:41-05:58 and crashed Paperclip. Since then:
+- `paperclip/start_paperclip.vbs` restarts Paperclip 15 s after any exit and logs to
+  `~/.paperclip/instances/default/logs/server-console.log`;
+- task `Cloudworks watchdog` (`paperclip/watchdog.ps1`, every 5 min) restarts Paperclip, Wave Lab or the
+  alerts if they are down and sends one critical Telegram message per service per day;
+- the owner keeps the PC plugged in with the screen timeout (plugged in) at Never and the lid action at
+  "Do nothing", so the PC never enters standby.

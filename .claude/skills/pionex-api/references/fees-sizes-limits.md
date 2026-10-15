@@ -6,9 +6,10 @@ Confidence tags: [official-doc] read on an official Pionex docs page; [observed]
 
 | Item | Value | Confidence |
 |---|---|---|
-| Spot trading fee | 0.05% of the transaction, charged on each trade (so ~0.10% for a round trip), maker and taker alike at the standard level | [secondary] Pionex blog posts (older ones from 2021, a 2026 review repeats it) |
+| Spot trading fee | Maker 0.050%, taker 0.050% (so ~0.10% for a round trip) at the standard level | [official-page] https://www.pionex.com/en/fees read in a browser on 2026-10-14 |
 | Trading bots (grid etc.) | No bot subscription or activation fee; each bot order pays the applicable trading fee | [secondary] Pionex blog, updated 2026-09-09 |
-| Futures/perpetual (standard) | 0.02% maker, 0.05% taker, plus funding every 8 hours | [secondary] Pionex blog |
+| Futures/perpetual (standard) | Maker 0.020%, taker 0.050%, plus funding every 8 hours | [official-page] fee page 2026-10-14 (funding interval [secondary]) |
+| Leveraged tokens | Maker 0.100%, taker 0.100% | [official-page] fee page 2026-10-14 |
 | VIP discounts | VIP tier recalculated daily at 01:30 UTC from the 30-day rolling volume and average account assets; tier system upgraded effective 2025-11-01 (VIP1 from 20 BTC 30-day spot volume or 3,000,000 USD futures; VIP10 added). A superseded June 2025 table showed spot VIP1 0.045% maker / 0.050% taker and VIP5 0.025% / 0.050%. Current per-tier table NOT read | [secondary] |
 | Fixed-fee products (no VIP discount) | XStock-Spot, Leveraged Tokens, Spot Innovation Zone, MEME Guru | [secondary] |
 | Spot-futures arbitrage bot | extra 10% fee on the bot's profit | [secondary], older |
@@ -16,7 +17,7 @@ Confidence tags: [official-doc] read on an official Pionex docs page; [observed]
 | Lab research fee | `assumed_spot_fee_per_side_for_research_only = 0.0005` (5 bps) per side in `config/mandate.v1.json`; `verified_fee_source` is still `null` | [lab] |
 | Fee asset | The paper broker charges buys in the base asset and sells in quote. This is an assumption until checked against a real fill record | [lab] |
 
-How to use this: charge 5 bps on both sides plus spread and impact in every backtest or paper trade, and run the 2x cost stress the mandate requires. The authoritative number for a given account is the fee on its own fills (a private endpoint; not available to this repo). Official fee page to check in a browser: https://www.pionex.com/en/fees (returned HTTP 403 to the fetch tool). Say "unverified from a primary source" when quoting these numbers.
+How to use this: charge 5 bps on both sides plus spread and impact in every backtest or paper trade, and run the 2x cost stress the mandate requires. The authoritative number for a given account is the fee on its own fills (a private endpoint; not available to this repo). The standard spot/futures/leveraged-token rates above were confirmed on the official fee page (https://www.pionex.com/en/fees) in a browser on 2026-10-14; it returns HTTP 403 to automated fetch tools. VIP tiers were not read.
 
 ## Rate limits
 

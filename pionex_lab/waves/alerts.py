@@ -308,8 +308,11 @@ def run(paths, stop, once: bool = False) -> int:
             if tg:
                 wa.notify = lambda text, tg=tg: telegram_send(tg, text)
                 log.info("telegram on")
-        for sym, action in wa.step():
-            if action not in ("ALREADY_EVALUATED",):
-                log.info("%s: %s", sym, action)
+        try:
+            for sym, action in wa.step():
+                if action not in ("ALREADY_EVALUATED",):
+                    log.info("%s: %s", sym, action)
+        except Exception as exc:  # noqa: BLE001 - a network drop (standby, Wi-Fi) must not end the alerts
+            log.warning("step failed, retrying next poll: %s", str(exc)[:200])
         if once or stop.wait(cfg["poll_seconds"]):
             return 0

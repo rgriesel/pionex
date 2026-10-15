@@ -181,6 +181,17 @@ def cmd_collect(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_record_daily(args, paths, cfg, mandate):
+    """Store today's free public snapshots (Deribit options, Pionex spreads, Binance premium, Coinbase) in
+    var/alpha/recorded.db. Public endpoints only; one failing source does not stop the others."""
+    from .data.daily_recorder import record_daily
+    db = paths.root / "alpha" / "recorded.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    report = record_daily(db)
+    print(json.dumps(report))
+    return 0 if not any(str(v).startswith("error") for v in report.values()) else 1
+
+
 def cmd_fetch_proxy(args, paths, cfg, mandate):
     """Download/refresh the labelled proxy-venue history (data/proxy.py) and report how closely
     it tracks Pionex. Public archive files only; no account or key."""
@@ -711,6 +722,7 @@ def main(argv=None) -> int:
     p.add_argument("name", nargs="?")
     p = sub.add_parser("guidance", help="forward-only scorecard of the YouTube channels' BTC calls")
     p.add_argument("--add", help="JSON file with a list of new calls to record first")
+    sub.add_parser("record-daily", help="store the day's free public series (Deribit options, spreads, premium) in var/alpha/recorded.db")
     p = sub.add_parser("fetch-proxy",help="download/refresh labelled proxy-venue history (Binance public archive)")
     p.add_argument("--months", type=int, default=None, help="full months of history (default: proxy.DEFAULT_MONTHS)")
     p = sub.add_parser("paper", help="run the paper engine")

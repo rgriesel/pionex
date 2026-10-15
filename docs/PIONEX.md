@@ -32,7 +32,7 @@ Base `https://api.pionex.com`, GET only. Response: `{"result": true, "data": ...
 
 ## Fees, sizes, limits
 
-- Fees (from Pionex blog posts; the official page was not readable): spot 0.05% per side, no extra bot fee, futures standard 0.02% maker / 0.05% taker, VIP tiers lower it (current table not read). The lab assumes 5 bps per side for research and stresses costs 2x.
+- Fees (official fee page, read in a browser on 2026-10-14): spot maker 0.050% / taker 0.050%, futures maker 0.020% / taker 0.050%, leveraged tokens 0.100%; no extra bot fee (blog); VIP tiers lower it (table not read). The lab assumes 5 bps per side for research and stresses costs 2x.
 - Minimums (live, from `symbols`): BTC_USDT size step 0.000001, tick 0.01, minimum 10 USDT notional, size range 0.000001 to 1000 (limit) and to 100 (market sell). 300 of 324 enabled USDT pairs have a 10 USDT minimum. Precision and minimums differ per pair, so read them at runtime.
 - Rate limit: 10 weight per second per IP (public) and per account (private). Over it: HTTP 429 and a 60 s ban. The lab keeps itself to 5 per second.
 
@@ -62,4 +62,4 @@ Paper only (`live_enabled=false`; never edit the mandate or its lock). No orders
 
 ## Open gaps
 
-Official fee schedule and VIP table not read (403); bot minimums only from old or marketing pages; the client charges `symbols` as weight 1 though the docs say 5; WebSocket per-connection topic cap not documented; 4H/8H/12H bar alignment not checked. See `.claude/skills/pionex-api/references/verification-2026-10-14.md`.
+VIP fee table not read; bot minimums only from old or marketing pages; the client charges `symbols` as weight 1 though the docs say 5; WebSocket per-connection topic cap not documented; 4H/8H/12H bar alignment not checked. See `.claude/skills/pionex-api/references/verification-2026-10-14.md`.

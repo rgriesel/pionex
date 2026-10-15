@@ -295,7 +295,13 @@ def run(paths, stop, once: bool = False) -> int:
         log.info("wave alerts disabled: %s not present", cfg_file)
         return 0
     cfg = {**DEFAULTS, **json.loads(cfg_file.read_text(encoding="utf-8"))}
-    tg = load_telegram(cfg.get("telegram_env_file"))
+    chat_file = Path(paths.root) / "notify" / "chat.json"         # saved by pionex_lab.notify (Telegram forgets after 24 h)
+
+    def with_chat(tg):
+        if tg and not tg.get("chat_id") and chat_file.exists():
+            tg["chat_id"] = json.loads(chat_file.read_text(encoding="utf-8")).get("chat_id")
+        return tg
+    tg = with_chat(load_telegram(cfg.get("telegram_env_file")))
     notify = (lambda text: telegram_send(tg, text)) if tg else None
     log.info("wave alerts started: %s %s %s, telegram %s", ",".join(cfg["symbols"]), cfg["interval"], RULES_VERSION,
              "on" if tg else "off (log only)")
@@ -304,7 +310,7 @@ def run(paths, stop, once: bool = False) -> int:
     while True:
         if wa.notify is None and time.time() - last_try > 600:      # token file created later: pick it up
             last_try = time.time()
-            tg = load_telegram(cfg.get("telegram_env_file"))
+            tg = with_chat(load_telegram(cfg.get("telegram_env_file")))
             if tg:
                 wa.notify = lambda text, tg=tg: telegram_send(tg, text)
                 log.info("telegram on")

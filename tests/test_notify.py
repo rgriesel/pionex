@@ -43,5 +43,17 @@ class Notify(unittest.TestCase):
         self.assertIn("Morning summary", self.sent[-1])
 
 
+class NotifyFailures(unittest.TestCase):
+    def test_a_telegram_error_keeps_the_message(self):
+        with tempfile.TemporaryDirectory() as d:
+            def boom(m):
+                raise RuntimeError("no chat yet")
+            r = notify(Path(d), "PASS: y", now=datetime(2026, 10, 15, 14, 0, tzinfo=SAST), sender=boom)
+            self.assertTrue(r.startswith("held (Telegram"))
+            sent = []
+            notify(Path(d), "later", now=datetime(2026, 10, 15, 15, 0, tzinfo=SAST), sender=sent.append)
+            self.assertIn("PASS: y", sent[0])                                # delivered with the next one
+
+
 if __name__ == "__main__":
     unittest.main()

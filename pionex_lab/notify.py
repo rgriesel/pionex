@@ -85,15 +85,25 @@ def notify(var: Path, text: str, level: str = "important", key: str | None = Non
     head = {"critical": "CRITICAL", "important": "Update", "daily": "Morning summary"}[level]
     parts.insert(0, f"{PREFIX} - {head}\n{line}")
     message = "\n\n".join(parts)[:3900]
+    tg = None
     if sender is None:
         tg = telegram()
         if tg is None:
             outbox.append({"at": now.isoformat(timespec="minutes"), "level": level, "text": line})
             _save(d / "outbox.json", outbox)
             return "held (no Telegram token file yet)"
+        if not tg.get("chat_id"):                            # Telegram forgets bot updates after 24 h
+            tg["chat_id"] = _load(d / "chat.json", {}).get("chat_id")
         from .waves.alerts import telegram_send
         sender = lambda m: telegram_send(tg, m)  # noqa: E731
-    sender(message)
+    try:
+        sender(message)
+    except Exception as exc:  # noqa: BLE001 - never lose a message or crash the agent's run
+        outbox.append({"at": now.isoformat(timespec="minutes"), "level": level, "text": line})
+        _save(d / "outbox.json", outbox)
+        return f"held (Telegram: {str(exc)[:120]})"
+    if tg and tg.get("chat_id"):
+        _save(d / "chat.json", {"chat_id": tg["chat_id"]})
     if flush:
         _save(d / "outbox.json", [])
     state["sent"].append(now.timestamp())

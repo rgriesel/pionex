@@ -1,6 +1,6 @@
 """C1: Donchian-ensemble trend (Zarattini, Pagani, Barbon) against CTA v1.1 on the same 10 coins (research only).
 
-PRE-REGISTERED 2026-10-14 21:08 SAST (machine clock), before anything below was run. Nothing changes after a result;
+PRE-REGISTERED 2026-10-14 21:08 UTC (23:08 SAST; machine clock), before anything below was run. Nothing changes after a result;
 a changed idea is a new test. Issue CLO-3; spec research/edge_candidates_2026-10-14.md section C1; the lead (board)
 confirmed the [proposed] gates as written. Status: backtest on PROXY data (Binance daily klines); v1.1 is itself
 in-sample, so a pass shows the family is robust to signal design, not a new independent edge. Not proof of profit.
@@ -62,7 +62,7 @@ LOOKBACKS = (5, 10, 20, 30, 60, 90, 150, 250, 360)
 NON_INFERIORITY_SHARPE, BOOT_LOWER_MIN, COST4_TOL, TURNOVER_MULT, MAX_COIN_SHARE = 0.15, -0.40, 0.10, 1.25, 0.35
 EX_2020_21_MIN_SHARPE = 0.5
 BOOT_Q = 0.025
-RULES = "donchian-ensemble C1 (pre-registered 2026-10-14 21:08 SAST)"
+RULES = "donchian-ensemble C1 (pre-registered 2026-10-14 21:08 UTC = 23:08 SAST)"
 
 
 def channel_states(closes, n):

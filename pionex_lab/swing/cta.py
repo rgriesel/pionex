@@ -42,11 +42,11 @@ DAY = 86_400_000
 RULES = "cta-basket v1.1 (in-sample; v1 rules of 2026-10-13 ~23:00 SAST + red-team bookkeeping fixes)"
 
 
-def load(paths):
+def load(paths, symbols=UNIVERSE):
     from ..data.store import MarketView
     view = MarketView(paths.proxy_market)
     data = {}
-    for s in UNIVERSE:
+    for s in symbols:
         d = view.bars(s, "1D")
         c = list(d.c)
         e = ema(c, 50)

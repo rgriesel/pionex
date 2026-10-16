@@ -1,0 +1,29 @@
+{
+ "preregistered": "see the module docstring (pionex_lab/swing/flow.py)",
+ "status": "backtest on PROXY data (Binance daily klines + taker flow); not proof of profit; red team pending on PASS",
+ "step1_ic": {
+  "BTC_USDT": {
+   "n": 2968,
+   "n_eff": 424.0,
+   "partial_ic": -0.016978971789341362,
+   "t": -0.34884316783439967,
+   "spearman_ic": -0.028419733369484945,
+   "pass": false,
+   "from": "2018-08-21"
+  },
+  "ETH_USDT": {
+   "n": 2968,
+   "n_eff": 424.0,
+   "partial_ic": 0.0006489858799484075,
+   "t": 0.013331885185592172,
+   "spearman_ic": 0.006386643745192271,
+   "pass": false,
+   "from": "2018-08-21"
+  }
+ },
+ "gates": {
+  "1_step1_ic_passes_both_coins": false
+ },
+ "verdict": "FAIL",
+ "step2_full": "not run: step 1 failed (pre-registered stop)"
+}

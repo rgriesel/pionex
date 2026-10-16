@@ -25,8 +25,9 @@ overlap; this is the honest adjustment). Gate 1: partial IC > 0 AND t >= 2 for B
 STEP 2 (only if step 1 passes): the BTC+ETH two-coin v1.1 book (the $100 canary pair): cta.simulate with
 coins = (BTC_USDT, ETH_USDT), tsmom_vote, vol sizing, 40% target, 2% band, 100% cap, cta.COST, decisions on yesterday's
 close, fills at the next 00:00 UTC open. Gated book: after the targets are known (post gross cap), a coin's target is
-multiplied by 0.5 when its z_{t-1} < -1, else 1 (z undefined -> 1). Implemented through the new optional
-`coin_scale` hook on cta.simulate (default None = v1.1 byte-identical; regression-checked). No second variant.
+multiplied by 0.5 when its z_{t-1} < -1, else 1 (z undefined -> 1). Implemented through cta.simulate's
+`scale` hook returning a per-coin dict {coin: factor} (added by the parallel CLO-16 work; default None = v1.1
+byte-identical). [Amended 2026-10-16 ~04:00 SAST, still before any data or result: my own `coin_scale` hook was dropped.] No second variant.
 Window: from the first decision day on which both coins have a defined z, to the last v1.1 decision day; v1.1 and all
 comparators on the identical days.
 Same-exposure control: the same book with no gating and its 40% target scaled by one factor k = avg_exposure(gated) /
@@ -157,21 +158,24 @@ def ic_screen(z, closes, horizon=HORIZON):
 
 # ---- step 2 --------------------------------------------------------------------------------------------
 class FlowScale:
-    """coin_scale hook: GATE_FACTOR for a coin whose z (yesterday's close) is below Z_CUT, else 1."""
+    """cta.simulate scale hook returning {coin: factor}: GATE_FACTOR for a coin whose z (yesterday's close) is below Z_CUT."""
 
     def __init__(self, zmaps):
         self.z, self.log = zmaps, {}
 
-    def __call__(self, t, coin, target):
-        v = self.z.get(coin, {}).get(t - DAY)
-        hit = v is not None and v < Z_CUT
-        if hit and target > 0:
-            self.log.setdefault(coin, set()).add(t)
-        return GATE_FACTOR if hit else 1.0
+    def __call__(self, t, targets, data):
+        out = {}
+        for coin in COINS:
+            v = self.z.get(coin, {}).get(t - DAY)
+            if v is not None and v < Z_CUT:
+                out[coin] = GATE_FACTOR
+                if targets.get(coin, 0) > 0:
+                    self.log.setdefault(coin, set()).add(t)
+        return out
 
 
 def _stats_pack(data, start, cost=None, hook=None):
-    return cta.simulate(data, RULE, SIZING, start, cost=cost, coins=COINS, coin_scale=hook)
+    return cta.simulate(data, RULE, SIZING, start, cost=cost, coins=COINS, scale=hook)
 
 
 def evaluate_book(data, zmaps, mult=1.0):

@@ -145,3 +145,43 @@ def sync(db_path, symbols=None, workers: int = 16, log=print) -> dict:
                 log(f"  {n}/{len(todo)}")
     conn.commit()
     return {"symbols": len(symbols), "fetched": n, "failed": bad, "monthly": len(monthly), "daily": len(daily)}
+
+
+TAKER_SCHEMA = "CREATE TABLE IF NOT EXISTS taker(symbol TEXT NOT NULL, t INTEGER NOT NULL, qvol REAL NOT NULL, tbq REAL NOT NULL, PRIMARY KEY(symbol, t));"
+
+
+def parse_taker(blob: bytes) -> list[tuple]:
+    """Rows (t_ms, quote volume = col 7, taker-buy quote volume = col 10) from a kline zip."""
+    out = []
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        for name in z.namelist():
+            if not name.endswith(".csv"):
+                continue
+            for row in csv.reader(io.TextIOWrapper(z.open(name), "utf-8")):
+                try:
+                    t, qv, tbq = int(row[0]), float(row[7]), float(row[10])
+                except (ValueError, IndexError):
+                    continue
+                out.append((t // 1000 if t > 10 ** 14 else t, qv, tbq))
+    return out
+
+
+def sync_taker(db_path, symbols=("BTCUSDT", "ETHUSDT"), log=print) -> dict:
+    """Monthly 1d zips for each symbol plus daily zips after the newest monthly file -> taker table (CLO-17)."""
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute(TAKER_SCHEMA)
+    n = 0
+    for sym in symbols:
+        _, mk = list_prefix(f"data/spot/monthly/klines/{sym}/1d/")
+        mk = sorted(k for k in mk if k.endswith(".zip"))
+        newest = mk[-1][-11:-4]
+        _, dk = list_prefix(f"data/spot/daily/klines/{sym}/1d/")
+        dk = sorted(k for k in dk if k.endswith(".zip") and k[-14:-4] > newest + "-31")
+        for key in mk + dk:
+            rows = parse_taker(_get(FILE_URL + key))
+            conn.executemany("INSERT OR REPLACE INTO taker VALUES(?,?,?,?)", [(sym,) + r for r in rows])
+            n += len(rows)
+        log(f"{sym}: {len(mk)} monthly + {len(dk)} daily files")
+    conn.commit()
+    conn.close()
+    return {"rows": n}

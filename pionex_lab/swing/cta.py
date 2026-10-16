@@ -125,7 +125,8 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
     the band/rebalance. All target weights are multiplied by the factor, so it can only cut exposure,
     never add leverage, and it cannot change signals or lookbacks. The function gets a copy of the targets
     and must use only data up to yesterday's close (keys < t); see swing/overlays.py. A factor outside
-    [0, 1] (or NaN) raises ValueError instead of being clamped silently.
+    [0, 1] (or NaN) raises ValueError instead of being clamped silently. It may also return a dict
+    {coin: factor} (coins not listed keep 1), same bounds (swing/btc_gate.py).
     `trace` (research hook, default None): a list that receives (interval start, {coin: weight * return})
     for each booked day (before costs), for per-coin attribution. Rule "donchian" multiplies each target
     by row["dc"] (the share of long channels, swing/donchian.py); other rules are untouched.
@@ -180,9 +181,13 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
             new = {s: v / gross for s, v in new.items()}
         if scale is not None:
             f = scale(t, dict(new), data)
-            if not (0.0 <= f <= 1.0 + 1e-9):                      # also rejects NaN
-                raise ValueError(f"scale() must return a factor in [0, 1], got {f!r} on {t}")
-            if new and f < 1.0:
+            fs = f.values() if isinstance(f, dict) else (f,)       # a dict = per-coin factors (missing coin = 1)
+            for x in fs:
+                if not (0.0 <= x <= 1.0 + 1e-9):                  # also rejects NaN
+                    raise ValueError(f"scale() must return a factor in [0, 1], got {f!r} on {t}")
+            if new and isinstance(f, dict):
+                new = {s: v * f.get(s, 1.0) for s, v in new.items()}
+            elif new and f < 1.0:
                 new = {s: v * f for s, v in new.items()}
         tradable = {s for s in coins if t in data[s]}
         usdt = None if capital is None else capital * min(eq, 1.0)  # allocation capped at `capital` (owner's cap)

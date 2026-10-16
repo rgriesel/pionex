@@ -16,7 +16,9 @@ COSTS: 5 bps fee + 2 bps slippage per side + half the measured Pionex spread. PA
 2026-10-16 (public bookTickers, 5 samples, ask-bid 0.01/0.02/0.01/0.01/0.01 USDT on ~4159): mean 0.03 bps, i.e. 0.0 at
 the 0.1 bp resolution of cta.SPREAD_BPS, so PAXG costs 7 bps a side like BTC and ETH (frozen). Min order 10 USDT.
 
-WINDOW: from PAXG's first decision day (the day after its 120th bar) to the end of the data. Control and test are run on
+WINDOW: from PAXG's first decision day (the day after its 120th bar) to the last day on which all 11 coins have a bar
+(trim() cuts longer series to it; found before any result, PAXG had one more daily bar than the other ten, which would
+have added one extra interval to the basket only). Control and test are run on
 exactly these days (start_ms filter on the full-history simulations; same day list asserted).
 CONTROL: v1.1 as is (10 coins, target 0.40, measured costs) on the same days.
 REGRESSION CHECK first: full-window v1.1 must reproduce CAGR 35.8% / max DD 26.3% / Sharpe 1.37, else VOID.
@@ -60,6 +62,12 @@ def costs(mult=1.0):
     c = dict(cta.COST)
     c[GOLD] = SIDE + PAXG_SPREAD_BPS / 2 / 1e4
     return {s: mult * v for s, v in c.items()}
+
+
+def trim(data):
+    """Cut every series to the last bar day that all coins share (same window for basket and control)."""
+    end = min(max(rows) for rows in data.values())
+    return {s: {t: r for t, r in rows.items() if t <= end} for s, rows in data.items()}
 
 
 def start_day(data, gold=GOLD):
@@ -139,7 +147,7 @@ def paxg_hold(data, days):
 
 
 def run(paths, write=True):
-    data = cta.load(paths, COINS_11)
+    data = trim(cta.load(paths, COINS_11))
     reg = cta.stats(cta.simulate(data, RULE, SIZING))
     rep = {"preregistered": "see the module docstring (pionex_lab/swing/gold.py)",
            "status": "backtest on PROXY data (Binance PAXGUSDT daily); not proof of profit; red team on a PASS",

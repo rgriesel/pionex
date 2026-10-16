@@ -22,6 +22,12 @@ class GoldTests(unittest.TestCase):
     def test_start_day_is_after_120th_bar(self):
         self.assertEqual(gold.start_day(self.data, "G"), sorted(self.data["G"])[120] + DAY)
 
+    def test_trim_cuts_to_common_last_day(self):
+        d = {"A": {1 * DAY: {}, 2 * DAY: {}}, "G": {1 * DAY: {}, 2 * DAY: {}, 3 * DAY: {}}}
+        out = gold.trim(d)
+        self.assertEqual(sorted(out["G"]), [1 * DAY, 2 * DAY])
+        self.assertEqual(sorted(out["A"]), [1 * DAY, 2 * DAY])
+
     def test_corr(self):
         self.assertAlmostEqual(gold.corr([1, 2, 3, 4], [2, 4, 6, 8]), 1.0)
         self.assertAlmostEqual(gold.corr([1, 2, 3, 4], [8, 6, 4, 2]), -1.0)

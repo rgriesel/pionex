@@ -25,6 +25,13 @@ edge on Pionex, as cheaply as possible, with research and paper trading running 
 7. Never present backtests, paper results or synthetic data as proof of future profit.
 8. Keep the owner's own scripts private (`var/fib/` is git-ignored; never commit it).
 
+## The owner's real Pionex account (read-only view)
+A separate read-only reader (Windows task "Pionex account reader", `py -m pionex_lab account`) loads the
+owner's read-only API key at runtime and writes balances to `var/account.db` (table `snapshots`) every
+minute. Agents may READ that database to compare the owner's real account with the paper books. Agents
+never open the key file, never call signed endpoints themselves, and never place, change or cancel
+orders or bots. The key is read-only by the owner's choice; live trading still needs the owner's switch.
+
 ## Evidence standard (quant work)
 Pre-register rules and pass criteria (with a timestamp) before running; run once; walk-forward or an
 untouched out-of-sample period; decisions on closed bars, fills at the next open; Pionex costs

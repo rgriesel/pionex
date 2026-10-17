@@ -1,0 +1,94 @@
+{
+ "thresholds": {
+  "suite": "luck-1 (2026-10-17 18:20 SAST)",
+  "level": 0,
+  "dsr_prob_min": 0.95,
+  "pbo_max": 0.2,
+  "perm_p_max": 0.01,
+  "min_days": 750,
+  "neighbour_sharpe_frac": 0.6,
+  "cost_min_sharpe": {
+   "2": 0.7,
+   "4": 0.5
+  },
+  "regime_floor_bps": {
+   "bull": 0.0,
+   "sideways": -3.0,
+   "bear": -3.0,
+   "crash": -15.0
+  },
+  "regime_min_days": 30,
+  "mc_ruin_max": 0.01,
+  "mc_p05_min": -0.3
+ },
+ "n_trials_before": 168,
+ "window_span": [
+  1672531200000,
+  1790982000000
+ ],
+ "R1_spot_volgate": {
+  "windows_total": 97,
+  "windows_run": 35,
+  "mean_all": -0.006005913993083463,
+  "mean_run": -0.002269929201348366,
+  "mean_idle": -0.008114937665837154,
+  "compound_gated": {
+   "total_return": -0.10122433486885196,
+   "max_dd": 0.24672870324931995
+  },
+  "compound_always": {
+   "total_return": -0.4874747590795385,
+   "max_dd": 0.5923092827819527
+  },
+  "perm_p": 0.25207479252074794,
+  "boot_lower_bps": -123.67586211472805,
+  "pass": false
+ },
+ "R2_futures_direction_5x": {
+  "leverage": 5,
+  "windows": 97,
+  "n_long": 50,
+  "mean_rule": -0.051281190974901844,
+  "mean_always_long": -0.05102956996541733,
+  "mean_always_short": -0.0778906067023473,
+  "liquidations_rule": 0,
+  "compound_rule": {
+   "total_return": -0.9995482007089904,
+   "max_dd": 0.9998161075386145
+  },
+  "compound_long": {
+   "total_return": -0.9996189915903537,
+   "max_dd": 0.9998004741496919
+  },
+  "compound_short": {
+   "total_return": -0.9999792672294894,
+   "max_dd": 0.9999792672294894
+  },
+  "perm_p": 0.24807519248075194,
+  "boot_lower_bps": -937.0996816943755,
+  "pass": false
+ },
+ "R2_sensitivity_20x_not_gated": {
+  "leverage": 20,
+  "windows": 97,
+  "n_long": 50,
+  "mean_rule": -0.33136099095394295,
+  "mean_always_long": -0.27690727829732986,
+  "mean_always_short": -0.5489943822313612,
+  "liquidations_rule": 47,
+  "compound_rule": {
+   "total_return": -1.0,
+   "max_dd": 1.0
+  },
+  "compound_long": {
+   "total_return": -1.0,
+   "max_dd": 1.0
+  },
+  "compound_short": {
+   "total_return": -1.0,
+   "max_dd": 1.0
+  },
+  "perm_p": 0.0943905609439056,
+  "boot_lower_bps": -4758.739363833484
+ }
+}

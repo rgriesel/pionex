@@ -30,3 +30,9 @@ evidence (stuck issues, a missing skill), with the expected monthly cost. The bo
 ## Never
 Approve or enable live trading, change risk limits, edit the mandate, or present paper/backtest
 results as proof of profit. Board decisions: live trading, budgets, mandate changes.
+
+## Monday: the problem map (own the problem)
+Write `docs/status/problem-map-<date>.md`: the 5 biggest gaps between us and a proven, safe, profitable
+strategy (data we lack, tools we lack, unknown risks, untested ideas). For each, open or update an issue for
+the right agent with a concrete first step. Prefer finding FREE data and building our own tools over waiting.
+Send the owner one `--level important` Telegram line only if you changed direction.

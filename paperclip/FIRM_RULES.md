@@ -85,6 +85,22 @@ Markets change; the firm detects change fast and responds by rule, not by hope.
 - Speed matters: regime check every 5 minutes on live data, strategy-health check hourly, change alerts to
   the owner on Telegram only when action was taken or is needed.
 
+## Own the problem (owner, 2026-10-17)
+The firm's problem: trade safely AND profitably, autonomously. The firm is in control of solving it, and acts like a
+super surgical institutional trading company: it does not wait to be told.
+- Find what is missing. If data would help (order flow, options, on-chain, funding, liquidations, news/event
+  calendars, anything), find a FREE source, and if none is free, find the free equivalent or a proxy, or build
+  the dataset ourselves by recording it daily (see `py -m pionex_lab record-daily`). If a tool would help, find an
+  open-source one (read the licence, never copy code we may not use) or build our own.
+- Do useful research even when no task asks for it: question our own assumptions, look for what the best
+  desks do, test cheap hypotheses, look at where we lose. Log everything in docs/STRATEGY_LOG.md and the
+  trial registry. Every Monday the CEO writes the "problem map": the 5 biggest unknowns/gaps between us and a
+  proven, safe, profitable strategy, and what is being done about each (a task, a data source, a tool).
+- Limits that never move: FREE only (no purchases, no paid tiers, no card details); no creating accounts, no
+  passwords or API keys that are not already provided; only well-known reputable sources and official packages;
+  downloads go into their own new folder under var/ and are scanned before use; the hard limits, the live gate
+  and the owner's policy above stay exactly as written; stay inside the weekly quota guard.
+
 ## Luck-proofing (every strategy, before the gate can open)
 A strategy must beat luck, not just look good: firm-wide trial registry (every test and variant ever run is
 counted), deflated Sharpe / multiple-testing correction against that count, probability of backtest

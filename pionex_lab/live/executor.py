@@ -195,9 +195,9 @@ class Journal:
 
 
 def _public_quote(symbol: str):
-    """(bid, ask) from the public Pionex book ticker; no credentials."""
-    from ..exchange.pionex_public import PionexPublic
-    t, _ = PionexPublic().book_ticker(symbol)
+    """(bid, ask) from the live public Pionex book ticker; no credentials. Raises fresh.StaleData when older than 5 s."""
+    from . import fresh
+    t = fresh.fetch_quote(symbol).require()
     return t.bid, t.ask
 
 
@@ -295,6 +295,9 @@ class Executor:
         try:
             bid, ask = (_d(x) for x in self.quote_fn(symbol))
         except Exception as exc:
+            if type(exc).__name__ == "StaleData":
+                self._notify(f"STALE DATA: refused {symbol} quote ({str(exc)[:80]})", level="critical")
+                raise Refused(f"STALE_DATA {symbol}") from None
             raise Refused(f"QUOTE_UNAVAILABLE {symbol}: {type(exc).__name__}") from None
         if bid <= 0 or ask <= 0 or bid >= ask:
             raise Refused(f"QUOTE_INVALID {symbol}")

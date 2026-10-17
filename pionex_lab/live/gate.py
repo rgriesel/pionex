@@ -16,6 +16,9 @@ limit comes from the hash-locked mandate, risk.peak_drawdown_fraction):
   8. (F5) the record is continuous: no gap between snapshots over MAX_GAP_H (6) hours and >= MIN_COVERAGE (95%) of the
      hourly buckets in the span hold a snapshot, so two snapshots 30 days apart do not count as 30 days.
      Book "closed trades" are completed round trips (position in a symbol back to flat), not partial sells.
+  9. (CLO-44) the luck-proofing suite (research/luck.py) passes ALL nine tests: var/reports/luck_<id>.json is intact
+     (hash), current (tightening level of the trial registry unchanged, <= 30 days old) and every test passed. Strategies
+     with no luck-testable backtest series (the shadow grids) can never pass this rule.
 
 Read-only: databases are opened with mode=ro. Unknown strategy ids are never eligible. No order code here.
 Residual trust: row 6 is a text table an agent can edit; the executor therefore also needs the owner's
@@ -144,7 +147,13 @@ def redteam_registry(log_path: Path) -> dict:
     return out
 
 
-def _evaluate(sid, kind, ts_list, trades, start_cap, last_eq, eqs, verdicts, dd_limit, now_ms, params) -> GateResult:
+def luck_check(var: Path, sid: str, now_ms: int):
+    """-> (ok, detail). Wrapper so tests can stand in for the (slow to produce) luck report."""
+    from ..research import luck
+    return luck.verify_report(var, sid, now_ms)
+
+
+def _evaluate(sid, kind, ts_list, trades, start_cap, last_eq, eqs, verdicts, dd_limit, now_ms, params, var) -> GateResult:
     r = GateResult(sid, kind, params=params)
     t0, t1 = min(ts_list), max(ts_list)
     days = (t1 - t0) / DAY_MS
@@ -159,6 +168,11 @@ def _evaluate(sid, kind, ts_list, trades, start_cap, last_eq, eqs, verdicts, dd_
     gap, frac = coverage(ts_list)
     r.checks.append(Check("record_coverage", gap <= MAX_GAP_H and frac >= MIN_COVERAGE,
                           f"max gap {gap:.1f} h, {frac:.0%} of hours", f"gap <= {MAX_GAP_H:g} h and >= {MIN_COVERAGE:.0%}"))
+    try:
+        lok, ldetail = luck_check(var, sid, now_ms)
+    except Exception as exc:                                   # fail closed
+        lok, ldetail = False, f"luck check error {type(exc).__name__}"
+    r.checks.append(Check("luck_tests", bool(lok), ldetail, "all 9 luck-proofing tests pass (research/luck.py)"))
     v, pin = verdicts.get(sid, (None, ""))
     r.checks.append(Check("redteam_holds", v == "HOLDS", v, "latest registry verdict == HOLDS"))
     if v == "HOLDS":
@@ -180,7 +194,7 @@ def evaluate_grids(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> l
                 out.append(GateResult(gid, "grid", [Check("forward_days", False, 0, f">= {MIN_DAYS:g}")], p))
                 continue
             out.append(_evaluate(gid, "grid", [r[0] for r in rows], int(rows[-1][2] or 0), float(p["invest"]),
-                                 rows[-1][1], [r[1] for r in rows], verdicts, dd_limit, now_ms, p))
+                                 rows[-1][1], [r[1] for r in rows], verdicts, dd_limit, now_ms, p, var))
     finally:
         db.close()
     return out
@@ -201,7 +215,7 @@ def evaluate_books(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> l
             trips = round_trips(db.execute("SELECT symbol, side, qty FROM fills WHERE book=? ORDER BY ts, id",
                                            (bid,)).fetchall())
             out.append(_evaluate(bid, "book", [r[0] for r in rows], trips, float(p["usdt"]), rows[-1][1],
-                                 [r[1] for r in rows], verdicts, dd_limit, now_ms, p))
+                                 [r[1] for r in rows], verdicts, dd_limit, now_ms, p, var))
     finally:
         db.close()
     return out

@@ -15,9 +15,16 @@ Every action passes `_vet()` in this order; the first failing rule refuses it (j
   5 caps, all from the mandate: capital = min(initial_capital, 100 USDT hard cap); per-position size =
     capital x position_notional_fraction (canary fraction while authority.canary_required); open exposure <=
     capital x gross_exposure_fraction; open bots <= max_positions; leverage <= risk.leverage; futures refused
-Daily loss stop: poll_pnl() records the exchange's realized+float P&L of our bots; a drop of
-capital x daily_loss_fraction within a UTC day halts everything for that day, a cumulative loss of
-absolute_experiment_loss_usd halts permanently (latch in var/live_journal.db; only the owner clears it).
+Red Team fixes (CLO-43): every spot order is valued at the live Pionex bid/ask fetched here, never a caller price;
+LIMIT prices must be within LIMIT_BAND of the touch; a SELL may not exceed the base quantity this executor's own
+journalled buys hold; var/live.json strategy_allowlist is mandatory; a create is refused while a running "cw:" bot
+the journal does not know exists; any ambiguous response (timeout, 5xx, unparseable, no id) journals UNKNOWN and
+latches a permanent halt until the owner reconciles.
+Loss stop: poll_pnl() computes equity P&L = bots (realized/total, plus any float loss field) + spot fills marked at
+the live bid; the daily drop is measured from the day's high-water mark; cumulative loss of absolute_experiment_loss_usd
+halts permanently. A failed poll halts the day (fail closed) and new actions are refused when the last poll is older
+than PNL_MAX_AGE_MS. Latches live in var/live_journal.db; only the owner clears them. poll_pnl must be scheduled
+(`py -m pionex_lab live-poll`) whenever the executor is armed.
 Dry-run (default, no transport, no credentials read) journals what WOULD happen and why it would be refused.
 Credentials are read only by `Executor.armed()` from the owner's key file and never logged or journalled.
 """
@@ -50,11 +57,18 @@ ALLOWED_ENDPOINTS = {
     ("GET", "/api/v1/bot/orders"),
     ("POST", "/api/v1/trade/order"),
 }
+LIMIT_BAND = Decimal("0.01")               # LIMIT price must be within 1% of the touch
+PNL_MAX_AGE_MS = 30 * 60 * 1000
+NOTE_PREFIX = "cw:"                    # marks bots this executor creates, so unknown ones can be detected
 ACTION_KINDS = {"grid_create", "grid_cancel", "spot_order", "futures_order"}
 
 
 class Refused(RuntimeError):
     pass
+
+
+class Ambiguous(Refused):
+    """The request may have reached Pionex (timeout, 5xx, unparseable, no id returned): outcome unknown."""
 
 
 @dataclass
@@ -106,9 +120,9 @@ class Transport:
             with self._open(req, timeout=15) as r:
                 out = json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise Refused(f"HTTP {exc.code} on {path}") from None
+            raise (Ambiguous if exc.code >= 500 else Refused)(f"HTTP {exc.code} on {path}") from None
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise Refused(f"request to {path} failed: {type(exc).__name__}") from None
+            raise Ambiguous(f"request to {path} failed: {type(exc).__name__}") from None
         if isinstance(out, dict) and out.get("result") is False:
             raise Refused(f"Pionex rejected {path}: {str(out.get('code'))[:40]} {str(out.get('message'))[:120]}")
         return out
@@ -120,16 +134,21 @@ class Journal:
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS actions(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, mode TEXT,
           strategy_id TEXT, kind TEXT, symbol TEXT, params TEXT, status TEXT, detail TEXT, bu_order_id TEXT,
-          commit_usdt REAL, mandate_sha TEXT);
+          commit_usdt REAL, mandate_sha TEXT, base_qty REAL DEFAULT 0, cash_usdt REAL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS pnl_obs(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, total REAL);
         CREATE TABLE IF NOT EXISTS halts(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, kind TEXT, day TEXT,
           detail TEXT);""")
+        for col in ("base_qty", "cash_usdt"):                    # journals created before the Red Team fixes
+            try:
+                self.db.execute(f"ALTER TABLE actions ADD COLUMN {col} REAL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
 
-    def add(self, ts, mode, a: Action, status, detail, sha, bu=None, commit=0.0):
+    def add(self, ts, mode, a: Action, status, detail, sha, bu=None, commit=0.0, base_qty=0.0, cash=0.0):
         self.db.execute("INSERT INTO actions(ts,mode,strategy_id,kind,symbol,params,status,detail,bu_order_id,"
-                        "commit_usdt,mandate_sha) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        "commit_usdt,mandate_sha,base_qty,cash_usdt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (ts, mode, a.strategy_id, a.kind, a.symbol, json.dumps(a.params, default=str), status,
-                         detail[:300], bu, commit, sha))
+                         detail[:300], bu, commit, sha, base_qty, cash))
         self.db.commit()
 
     def open_bots(self) -> list:
@@ -145,8 +164,21 @@ class Journal:
         return max(0.0, self.db.execute("SELECT COALESCE(SUM(commit_usdt),0) FROM actions WHERE mode='LIVE' AND "
                                         "status='SENT' AND kind='spot_order'").fetchone()[0])
 
+    def held(self, symbol: str) -> float:
+        """Base quantity this executor's LIVE spot orders hold (estimate; unfilled LIMIT buys count as 0)."""
+        return max(0.0, self.db.execute("SELECT COALESCE(SUM(base_qty),0) FROM actions WHERE mode='LIVE' AND "
+                                        "status='SENT' AND kind='spot_order' AND symbol=?", (symbol,)).fetchone()[0])
+
+    def spot_symbols(self) -> list:
+        return [r[0] for r in self.db.execute("SELECT DISTINCT symbol FROM actions WHERE mode='LIVE' AND "
+                                              "status='SENT' AND kind='spot_order'")]
+
+    def spot_cash(self, symbol: str) -> float:
+        return self.db.execute("SELECT COALESCE(SUM(cash_usdt),0) FROM actions WHERE mode='LIVE' AND status='SENT' "
+                               "AND kind='spot_order' AND symbol=?", (symbol,)).fetchone()[0]
+
     def halted(self, day: str):
-        r = self.db.execute("SELECT kind, detail FROM halts WHERE kind='ABS' OR (kind='DAY' AND day=?) "
+        r = self.db.execute("SELECT kind, detail FROM halts WHERE kind IN ('ABS','UNKNOWN') OR (kind='DAY' AND day=?) "
                             "ORDER BY id DESC LIMIT 1", (day,)).fetchone()
         return r
 
@@ -155,13 +187,20 @@ class Journal:
         self.db.commit()
 
 
+def _public_quote(symbol: str):
+    """(bid, ask) from the public Pionex book ticker; no credentials."""
+    from ..exchange.pionex_public import PionexPublic
+    t, _ = PionexPublic().book_ticker(symbol)
+    return t.bid, t.ask
+
+
 def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%d")
 
 
 class Executor:
     def __init__(self, paths, log_path: Path, transport=None, clock=time.time, notifier=None, _armed=False,
-                 config_dir=None):
+                 config_dir=None, quote_fn=None):
         self.config_dir = config_dir or DEFAULT_CONFIG_DIR
         self.paths, self.log_path, self.clock = paths, Path(log_path), clock
         self.var = Path(paths.root)
@@ -169,6 +208,7 @@ class Executor:
         self.transport = transport if _armed else None       # dry-run can never hold a transport
         self.armed_mode = bool(_armed)
         self._notify = notifier or self._default_notify
+        self.quote_fn = quote_fn or _public_quote
 
     # ---- construction -------------------------------------------------------------------------
     @classmethod
@@ -219,6 +259,8 @@ class Executor:
                 why.append("var/live.json approved_mandate_sha256 != mandate hash")
             if not cfg.get("key_file"):
                 why.append("var/live.json has no key_file")
+            if not isinstance(cfg.get("strategy_allowlist"), list):
+                why.append("var/live.json has no strategy_allowlist (owner must list strategies explicitly)")
         except Refused as exc:
             why.append(str(exc))
         if not m.get("execution", "allowed_symbols"):
@@ -242,18 +284,44 @@ class Executor:
     def _exposure(self) -> Decimal:
         return sum((_d(c) for _, _, _, c in self.journal.open_bots()), Decimal(0)) + _d(self.journal.spot_commit())
 
-    def _notional(self, a: Action) -> Decimal:
+    def _quote(self, symbol: str):
+        try:
+            bid, ask = (_d(x) for x in self.quote_fn(symbol))
+        except Exception as exc:
+            raise Refused(f"QUOTE_UNAVAILABLE {symbol}: {type(exc).__name__}") from None
+        if bid <= 0 or ask <= 0 or bid >= ask:
+            raise Refused(f"QUOTE_INVALID {symbol}")
+        return bid, ask
+
+    def _notional(self, a: Action):
+        """-> (notional USDT, est. base qty change, est. USDT cash change). Spot orders are valued at the live touch."""
         p = a.params
         if a.kind == "grid_create":
-            return _d(p["invest"])
-        if p.get("type") == "LIMIT":
-            return _d(p["price"]) * _d(p["size"])
-        if p.get("side") == "BUY":
-            return _d(p["amount"])
-        return _d(p["ref_price"]) * _d(p["size"])          # MARKET sell: caller supplies a reference price
+            return _d(p["invest"]), 0.0, 0.0
+        side, typ = p.get("side"), p.get("type")
+        if side not in ("BUY", "SELL") or typ not in ("LIMIT", "MARKET"):
+            raise Refused("spot order needs side BUY|SELL and type LIMIT|MARKET")
+        bid, ask = self._quote(a.symbol.upper())
+        touch = ask if side == "BUY" else bid
+        if typ == "LIMIT":
+            price = _d(p["price"])
+            if price <= 0 or abs(price / touch - 1) > LIMIT_BAND:
+                raise Refused(f"LIMIT price {price} more than {LIMIT_BAND:.0%} from touch {touch}")
+        if side == "BUY":
+            n = _d(p["size"]) * max(price, touch) if typ == "LIMIT" else _d(p["amount"])
+            qty = 0.0 if typ == "LIMIT" else float(n / (ask * Decimal("1.01")))   # unfilled LIMIT buys hold nothing
+            return n, qty, -float(n)
+        size = _d(p["size"])
+        if size <= 0:
+            raise Refused("non-positive size")
+        held = self.journal.held(a.symbol)
+        if float(size) > held:
+            raise Refused(f"sell {size} exceeds base this executor holds ({held:.8f}); owner coins are never sold")
+        n = size * bid
+        return n, -float(size), float(n)
 
-    def _vet(self, a: Action, m, eligible: dict, cfg_allow) -> Decimal:
-        """Returns the notional or raises Refused. m is a loaded, hash-checked mandate."""
+    def _vet(self, a: Action, m, eligible: dict, cfg_allow):
+        """Returns (notional, base qty change, cash change) or raises Refused. m is a loaded, hash-checked mandate."""
         if a.kind not in ACTION_KINDS:
             raise Refused(f"unknown action kind {a.kind}")
         if a.kind == "futures_order":
@@ -264,6 +332,10 @@ class Executor:
                 raise Refused(f"strategy {a.strategy_id} is not ELIGIBLE per the proof gate")
             if eligible[a.strategy_id] != ("grid" if a.kind == "grid_create" else "book"):
                 raise Refused(f"strategy {a.strategy_id} is a {eligible[a.strategy_id]} strategy; action {a.kind}")
+        if a.kind != "grid_cancel" and self.armed_mode:
+            last = self.journal.db.execute("SELECT MAX(ts) FROM pnl_obs").fetchone()[0]
+            if last is None or self.now_ms() - last > PNL_MAX_AGE_MS:
+                raise Refused("PNL_STALE: no loss-stop observation in the last 30 minutes (run live-poll)")
         if cfg_allow is not None and a.strategy_id not in cfg_allow:
             raise Refused(f"strategy {a.strategy_id} not in owner strategy_allowlist")
         if a.symbol.upper() not in L["symbols"]:
@@ -273,15 +345,15 @@ class Executor:
                 raise Refused("cancel refused: not an open bot opened by this executor")
             if a.params.get("close_model", "NOT_SELL") not in ("NOT_SELL", "TO_USDT"):
                 raise Refused("bad close_model")
-            return Decimal(0)
+            return Decimal(0), 0.0, 0.0
         if _d(a.params.get("leverage", 1)) > L["leverage"]:
             raise Refused("leverage above mandate")
-        n = self._notional(a)
+        n, qty, cash = self._notional(a)
         if n <= 0:
             raise Refused("non-positive size")
-        if n > L["position"]:
-            raise Refused(f"size {n} above per-position cap {L['position']}")
         sells = a.kind == "spot_order" and a.params.get("side") == "SELL"
+        if n > L["position"] and not sells:        # a sell is bounded by what we hold, which was capped when bought
+            raise Refused(f"size {n} above per-position cap {L['position']}")
         if not sells:
             if self._exposure() + n > L["gross"]:
                 raise Refused(f"exposure would exceed gross cap {L['gross']}")
@@ -290,7 +362,7 @@ class Executor:
                     raise Refused("max_positions reached")
                 if int(a.params["rows"]) > MAX_ROWS or int(a.params["rows"]) < 2:
                     raise Refused("rows out of range")
-        return n
+        return n, qty, cash
 
     # ---- execution ----------------------------------------------------------------------------
     def execute(self, a: Action) -> dict:
@@ -306,7 +378,7 @@ class Executor:
             results = gate.evaluate_all(self.var, self.log_path, m, ts)
             eligible = {r.strategy_id: r.kind for r in results if r.eligible}
             allow = load_live_config(self.var).get("strategy_allowlist") if (self.var / "live.json").exists() else None
-            n = self._vet(a, m, eligible, allow)
+            n, qty, cash = self._vet(a, m, eligible, allow)
             if reasons:                          # dry-run: record what would stop live
                 self.journal.add(ts, mode, a, "PLANNED", "would pass caps; live blocked by: " + "; ".join(reasons),
                                  sha, commit=float(n))
@@ -314,7 +386,14 @@ class Executor:
             if not self.armed_mode:
                 self.journal.add(ts, mode, a, "PLANNED", "passes every rule", sha, commit=float(n))
                 return {"status": "PLANNED", "blocked_by": []}
-            resp = self._send(a, n)
+            try:
+                resp = self._send(a, n)
+            except Ambiguous as exc:             # may have reached Pionex: never retry, never assume, stop everything
+                self.journal.add(ts, mode, a, "UNKNOWN", str(exc), sha)
+                self.journal.halt(ts, "UNKNOWN", _day(ts), f"{a.kind} {a.strategy_id}: {str(exc)[:200]}")
+                self._notify(f"[live LIVE] UNKNOWN outcome {a.kind} {a.strategy_id} {a.symbol}: HALTED until the owner "
+                             f"reconciles on Pionex ({str(exc)[:120]})", "critical")
+                return {"status": "UNKNOWN", "reason": str(exc)}
         except Refused as exc:
             self.journal.add(ts, mode, a, "REFUSED", str(exc), sha)
             self._notify(f"[live {mode}] REFUSED {a.kind} {a.strategy_id} {a.symbol}: {str(exc)[:160]}")
@@ -325,7 +404,7 @@ class Executor:
             commit = 0.0
         elif a.kind == "spot_order" and a.params.get("side") == "SELL":
             commit = -min(float(n), self.journal.spot_commit())     # only reduces what this executor bought
-        self.journal.add(ts, mode, a, "SENT", "ok", sha, bu=bu, commit=commit)
+        self.journal.add(ts, mode, a, "SENT", "ok", sha, bu=bu, commit=commit, base_qty=qty, cash=cash)
         self._notify(f"[live LIVE] SENT {a.kind} {a.strategy_id} {a.symbol} {n} USDT")
         return {"status": "SENT", "bu_order_id": bu}
 
@@ -335,6 +414,7 @@ class Executor:
         t, p = self.transport, a.params
         base, quote = a.symbol.upper().split("_")
         if a.kind == "grid_create":
+            self._reconcile()
             data = {"top": _fmt(p["top"]), "bottom": _fmt(p["bottom"]), "row": int(p["rows"]),
                     "grid_type": p.get("type", "geometric"), "quote_total_investment": _fmt(p["invest"])}
             chk = t.request("POST", "/api/v1/bot/orders/spotGrid/checkParams",
@@ -347,8 +427,9 @@ class Executor:
             if p.get("stop"):
                 create.update({"lossStopType": "price", "lossStop": _fmt(p["stop"])})
             out = t.request("POST", "/api/v1/bot/orders/spotGrid/create",
-                            body={"base": base, "quote": quote, "note": a.strategy_id[:40], "buOrderData": create})
-            return {"bu": str((out.get("data") or {}).get("buOrderId", ""))}
+                            body={"base": base, "quote": quote, "note": (NOTE_PREFIX + a.strategy_id)[:40],
+                                           "buOrderData": create})
+            return {"bu": self._need_id((out.get("data") or {}).get("buOrderId"), "create")}
         if a.kind == "grid_cancel":
             t.request("POST", "/api/v1/bot/orders/spotGrid/cancel",
                       body={"buOrderId": p["bu_order_id"], "closeSellModel": p.get("close_model", "NOT_SELL")})
@@ -361,22 +442,67 @@ class Executor:
         else:
             body["size"] = _fmt(p["size"])
         out = t.request("POST", "/api/v1/trade/order", body=body)
-        return {"bu": str((out.get("data") or {}).get("orderId", ""))}
+        return {"bu": self._need_id((out.get("data") or {}).get("orderId"), "order")}
+
+    @staticmethod
+    def _need_id(v, what):
+        if not v:
+            raise Ambiguous(f"{what} response carried no id; outcome unknown")
+        return str(v)
+
+    def _reconcile(self):
+        """Refuse (and latch) while Pionex shows a running bot of ours that the journal does not know."""
+        try:
+            out = self.transport.request("GET", "/api/v1/bot/orders", query={"status": "running"})
+        except Refused as exc:
+            raise Refused(f"RECONCILE_FAILED: {exc}") from None
+        known = {b[0] for b in self.journal.open_bots()}
+        for o in (out.get("data") or {}).get("orders", []):
+            d = o.get("buOrderData") or {}
+            bid = str(o.get("buOrderId") or d.get("buOrderId") or "")
+            note = str(o.get("note") or d.get("note") or "")
+            if note.startswith(NOTE_PREFIX) and bid not in known:
+                ts = self.now_ms()
+                self.journal.halt(ts, "UNKNOWN", _day(ts), f"unknown running bot {bid} ({note[:40]})")
+                raise Refused(f"RECONCILE_UNKNOWN_BOT {bid}: halted until the owner reconciles")
 
     # ---- loss stop ----------------------------------------------------------------------------
+    @staticmethod
+    def _bot_pnl(o: dict) -> float:
+        """Conservative P&L of one bot: lowest of realized/total, plus any reported float LOSS."""
+        d = o.get("buOrderData") or {}
+        vals = [float(d[k]) for k in ("realizedProfit", "totalProfit") if d.get(k) not in (None, "")]
+        pnl = min(vals) if vals else 0.0
+        for k in ("unrealizedProfit", "floatProfit", "unrealizedPnl", "floatPnl"):
+            if d.get(k) not in (None, ""):
+                pnl += min(0.0, float(d[k]))
+        return pnl
+
     def poll_pnl(self) -> dict:
-        """Armed only. Sum realized+float P&L of our bots from the exchange; trip the loss stops."""
+        """Armed only. Equity P&L of everything this executor holds, from the exchange and live quotes; trips the
+        loss stops. Any failure halts the rest of the UTC day (fail closed)."""
         if not self.armed_mode or self.transport is None:
             raise Refused("not armed")
         ids = {b[0] for b in self.journal.db.execute("SELECT DISTINCT bu_order_id FROM actions WHERE mode='LIVE' "
                                                      "AND status='SENT' AND kind='grid_create'")}
-        total = 0.0
-        for status in ("running", "finished"):
-            out = self.transport.request("GET", "/api/v1/bot/orders", query={"status": status})
-            for o in (out.get("data") or {}).get("orders", []):
-                d = o.get("buOrderData") or {}
-                if str(o.get("buOrderId", d.get("buOrderId", ""))) in ids:
-                    total += float(d.get("realizedProfit") or 0)
+        try:
+            total, seen = 0.0, set()
+            for status in ("running", "finished"):
+                out = self.transport.request("GET", "/api/v1/bot/orders", query={"status": status})
+                for o in (out.get("data") or {}).get("orders", []):
+                    d = o.get("buOrderData") or {}
+                    bid = str(o.get("buOrderId") or d.get("buOrderId") or "")
+                    if bid in ids and bid not in seen:
+                        seen.add(bid)
+                        total += self._bot_pnl(o)
+            for sym in self.journal.spot_symbols():
+                bid, _ask = self._quote(sym)
+                total += self.journal.held(sym) * float(bid) + self.journal.spot_cash(sym)
+        except Refused as exc:
+            ts = self.now_ms()
+            self.journal.halt(ts, "DAY", _day(ts), f"pnl poll failed: {str(exc)[:200]}")
+            self._notify(f"[live] HALT DAY: loss-stop poll failed ({str(exc)[:120]}); no new actions today", "critical")
+            return {"total": None, "halt": "DAY", "error": str(exc)}
         return self.observe_pnl(total)
 
     def observe_pnl(self, total: float) -> dict:
@@ -386,10 +512,11 @@ class Executor:
         if m is None:
             raise Refused("mandate unavailable")
         L = self.limits(m)
+        start = int(datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
         prev = self.journal.db.execute("SELECT total FROM pnl_obs WHERE ts < ? ORDER BY id DESC LIMIT 1",
-                                       (int(datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                                            .timestamp() * 1000),)).fetchone()
-        base = prev[0] if prev else 0.0
+                                       (start,)).fetchone()
+        top = self.journal.db.execute("SELECT MAX(total) FROM pnl_obs WHERE ts >= ?", (start,)).fetchone()[0]
+        base = max(prev[0] if prev else 0.0, top if top is not None else float("-inf"))   # day high-water mark
         self.journal.db.execute("INSERT INTO pnl_obs(ts,total) VALUES(?,?)", (ts, total))
         self.journal.db.commit()
         out = {"total": total, "day_pnl": total - base, "halt": None}

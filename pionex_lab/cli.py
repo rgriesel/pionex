@@ -435,6 +435,19 @@ def cmd_live_gate(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_live_poll(args, paths, cfg, mandate):
+    """Loss-stop poll (CLO-43): only works when the executor is armed; schedule it every few minutes while armed."""
+    from .live import executor
+    try:
+        ex = executor.Executor.armed(paths, PROJECT_ROOT / "docs" / "STRATEGY_LOG.md")
+    except executor.Refused as exc:
+        print("not armed:", exc)
+        return 1
+    out = ex.poll_pnl()
+    print(out)
+    return 2 if out.get("halt") else 0
+
+
 def cmd_shadow_grid(args, paths, cfg, mandate):
     """Forward SPOT grid bots on live Pionex public prices (paper, no keys, no orders): live/shadow_grid.py."""
     from .live import shadow_grid
@@ -770,6 +783,7 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
+    sub.add_parser("live-poll", help="armed only: poll equity P&L and trip the daily/absolute loss stops")
     sub.add_parser("live-gate", help="proof gate + live executor DRY-RUN: report ELIGIBLE strategies (no orders)")
     p = sub.add_parser("shadow-grid", help="forward SPOT grid bots on live Pionex prices (paper, public data)")
     p.add_argument("--once", action="store_true")

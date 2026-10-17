@@ -286,6 +286,14 @@ class ExecutorRules(unittest.TestCase):
         self.assertEqual(e.execute(self.grid())["status"], "REFUSED")
         self.assertEqual(tr.calls, [])
 
+    def test_health_stop_marker_blocks_that_strategy_only(self):
+        e, tr = self.mk()
+        (self.var / "LIVE_STOP_g1").write_text("{}")                        # CLO-45: written by live/health.py
+        r = e.execute(self.grid())
+        self.assertEqual(r["status"], "REFUSED")
+        self.assertIn("health monitor", r.get("detail", "") + str(r))
+        self.assertEqual(tr.calls, [])
+
     def test_live_disabled(self):
         self.pin(mk_mandate(self.cfg, authority__live_enabled=False))
         with self.assertRaises(ex.Refused):
@@ -739,6 +747,59 @@ class CoverageRules(unittest.TestCase):
     def test_round_trips_helper(self):
         self.assertEqual(gate.round_trips([("A", "BUY", 1), ("A", "SELL", 0.4), ("A", "SELL", 0.6), ("A", "BUY", 1),
                                            ("B", "BUY", 2), ("B", "SELL", 2)]), 2)
+
+
+class AdaptStopRules(unittest.TestCase):
+    """CLO-45: a health-monitor stop blocks trading, a retired strategy never returns, a paused one returns only by
+    passing the gate on the record made after the stop."""
+
+    def setUp(self):
+        _patch_luck(self)
+        self.d = tempfile.TemporaryDirectory()
+        self.var = Path(self.d.name)
+        self.cfg = self.var / "cfg"
+        self.cfg.mkdir()
+        mk_mandate(self.cfg)
+        self.m = load_mandate(self.cfg)
+        self.log = self.var / "log.md"
+        self.log.write_text(LOG_HEAD + "| g1 | HOLDS | 2026-10-20 | r.md | " + PH + " |\n", encoding="utf-8")
+        mk_grid_db(self.var)
+
+    def tearDown(self):
+        self.d.cleanup()
+
+    def res(self):
+        return {x.strategy_id: x for x in gate.evaluate_all(self.var, self.log, self.m, NOW)}
+
+    def test_stopped_strategy_not_eligible_and_executor_refuses(self):
+        from pionex_lab.live import health
+        self.assertTrue(self.res()["g1"].eligible)
+        health.stop_strategy(self.var, "g1", ["drift"], NOW - 2 * DAY)
+        r = self.res()["g1"]
+        self.assertFalse(r.eligible)
+        self.assertTrue({"stop_cleared", "forward_days"} <= {c.rule for c in r.checks if not c.ok})
+        self.assertEqual(gate.requalify(self.var, [r], NOW), [])             # post-stop record far below 30 days
+
+    def test_retired_never_returns(self):
+        from pionex_lab.live import health
+        health.stop_strategy(self.var, "g1", ["a"], NOW - 100 * DAY)
+        health.stop_strategy(self.var, "g1", ["b"], NOW - 90 * DAY)
+        r = self.res()["g1"]
+        self.assertIn("not_retired", {c.rule for c in r.checks if not c.ok})
+        self.assertEqual(gate.requalify(self.var, [r], NOW), [])
+        self.assertEqual(health.status_of(self.var, "g1")["status"], "RETIRED")
+
+    def test_requalifies_on_post_stop_record(self):
+        from pionex_lab.live import health
+        health.stop_strategy(self.var, "g1", ["drift"], NOW - 40 * DAY)       # stop before the 31-day record starts
+        st = health.load_state(self.var)
+        st["g1"]["from_ms"] = NOW - 32 * DAY                                  # record made after the stop spans 31 days
+        health._atomic(health.state_path(self.var), st)
+        results = list(self.res().values())
+        self.assertEqual(gate.requalify(self.var, results, NOW), ["g1"])
+        self.assertFalse((self.var / "LIVE_STOP_g1").exists())
+        self.assertTrue(self.res()["g1"].eligible)
+        self.assertEqual(health.status_of(self.var, "g1")["status"], "ACTIVE")
 
 
 if __name__ == "__main__":

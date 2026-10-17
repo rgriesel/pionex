@@ -20,6 +20,9 @@ limit comes from the hash-locked mandate, risk.peak_drawdown_fraction):
      (hash), current (tightening level of the trial registry unchanged, <= 30 days old) and every test passed. Strategies
      with no luck-testable backtest series (the shadow grids) can never pass this rule.
 
+  10. (CLO-45) not RETIRED, and not under a health-monitor stop: after a DRIFT stop (live/health.py) only the forward record
+     made AFTER the stop counts for rules 1-9, and requalify() lifts the stop only when all of them pass on it.
+
 Read-only: databases are opened with mode=ro. Unknown strategy ids are never eligible. No order code here.
 Residual trust: row 6 is a text table an agent can edit; the executor therefore also needs the owner's
 mandate (LIVE + authorization record, checked by mandate.py), the owner-written var/live.json pin of the mandate
@@ -34,6 +37,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from . import health
 
 MIN_DAYS = 30.0
 MIN_TRADES = 20
@@ -181,7 +186,7 @@ def _evaluate(sid, kind, ts_list, trades, start_cap, last_eq, eqs, verdicts, dd_
     return r
 
 
-def evaluate_grids(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> list:
+def evaluate_grids(var: Path, verdicts: dict, dd_limit: float, now_ms: int, since: dict | None = None) -> list:
     db = _ro(Path(var) / "shadow_grid.db")
     if db is None:
         return []
@@ -189,7 +194,8 @@ def evaluate_grids(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> l
     try:
         for gid, params in db.execute("SELECT id, params FROM grids ORDER BY id").fetchall():
             p = json.loads(params)
-            rows = db.execute("SELECT ts, equity, trips FROM snaps WHERE grid_id=? ORDER BY ts, id", (gid,)).fetchall()
+            rows = db.execute("SELECT ts, equity, trips FROM snaps WHERE grid_id=? AND ts>? ORDER BY ts, id",
+                              (gid, (since or {}).get(gid, 0))).fetchall()
             if not rows:
                 out.append(GateResult(gid, "grid", [Check("forward_days", False, 0, f">= {MIN_DAYS:g}")], p))
                 continue
@@ -200,7 +206,7 @@ def evaluate_grids(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> l
     return out
 
 
-def evaluate_books(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> list:
+def evaluate_books(var: Path, verdicts: dict, dd_limit: float, now_ms: int, since: dict | None = None) -> list:
     db = _ro(Path(var) / "forward_shadow.db")
     if db is None:
         return []
@@ -208,7 +214,8 @@ def evaluate_books(var: Path, verdicts: dict, dd_limit: float, now_ms: int) -> l
     try:
         for bid, params in db.execute("SELECT id, params FROM books ORDER BY id").fetchall():
             p = json.loads(params)
-            rows = db.execute("SELECT ts, equity FROM equity WHERE book=? ORDER BY ts, id", (bid,)).fetchall()
+            rows = db.execute("SELECT ts, equity FROM equity WHERE book=? AND ts>? ORDER BY ts, id",
+                              (bid, (since or {}).get(bid, 0))).fetchall()
             if not rows:
                 out.append(GateResult(bid, "book", [Check("forward_days", False, 0, f">= {MIN_DAYS:g}")], p))
                 continue
@@ -226,7 +233,26 @@ def evaluate_all(var: Path, log_path: Path, mandate, now_ms: int | None = None) 
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     dd_limit = float(mandate.get("risk", "peak_drawdown_fraction"))
     verdicts = redteam_registry(log_path)
-    return evaluate_grids(var, verdicts, dd_limit, now_ms) + evaluate_books(var, verdicts, dd_limit, now_ms)
+    since = health.record_start(var)                     # CLO-45: after a stop only the record made since then counts
+    out = evaluate_grids(var, verdicts, dd_limit, now_ms, since) + evaluate_books(var, verdicts, dd_limit, now_ms, since)
+    for r in out:
+        st = health.status_of(var, r.strategy_id)["status"]
+        r.checks.append(Check("not_retired", st != "RETIRED", st, "not RETIRED by the strategy-health monitor"))
+        if st == "PAUSED" or health.is_stopped(var, r.strategy_id):
+            r.checks.append(Check("stop_cleared", False, st, "stop lifted: requalify() after the gate passes on the post-stop record"))
+    return out
+
+
+def requalify(var: Path, results, now_ms: int) -> list:
+    """PROGRAM path (executor daily run): a PAUSED strategy whose every OTHER gate check passes on the post-stop record is
+    reactivated (stop marker removed, state ACTIVE). Returns the ids reactivated. Never touches RETIRED."""
+    out = []
+    for r in results:
+        if health.status_of(var, r.strategy_id)["status"] != "PAUSED":
+            continue
+        if all(c.ok for c in r.checks if c.rule != "stop_cleared") and health.reactivate(var, r.strategy_id, now_ms):
+            out.append(r.strategy_id)
+    return out
 
 
 def eligible_ids(results) -> set:

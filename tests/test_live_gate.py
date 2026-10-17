@@ -407,6 +407,9 @@ class RedTeamFixes(ExecutorRules):
     def setUp(self):
         super().setUp()
         GateRules.mk_book(self, sells=20)
+        old = ex.BOOK_ORDERS_ENABLED
+        ex.BOOK_ORDERS_ENABLED = True          # the F1 sell-cap rules are exercised with book orders switched on
+        self.addCleanup(setattr, ex, "BOOK_ORDERS_ENABLED", old)
         self.log.write_text(LOG_HEAD + "| g1 | HOLDS | d | e | " + PH + " |\n| b1 | HOLDS | d | e | " + PHB + " |\n",
                             encoding="utf-8")
 
@@ -437,8 +440,6 @@ class RedTeamFixes(ExecutorRules):
     def test_f1_limit_price_far_from_touch_refused(self):
         e, _ = self.mk()
         self.assertEqual(e.execute(self.spot("BUY", "LIMIT", price=1, size=0.0001))["status"], "REFUSED")
-        self.assertEqual(e.execute(self.spot("BUY", "LIMIT", price=65100, size=0.0001))["status"], "SENT")
-        self.assertEqual(e.journal.held("BTC_USDT"), 0.0)           # unfilled limit buys are not assumed held
         self.assertEqual(e.execute(self.spot("SELL", "LIMIT", price=1, size=0.0001))["status"], "REFUSED")
 
     def test_f1_quote_failure_refuses(self):
@@ -563,6 +564,109 @@ class RedTeamFixes(ExecutorRules):
         with self.assertRaises(ex.Refused) as cm:
             self.mk()
         self.assertIn("strategy_allowlist", str(cm.exception))
+
+    # Round 2: N1-N4 -------------------------------------------------------------------------
+    def test_n1_cancel_and_create_close_to_usdt_only(self):
+        e, tr = self.mk()
+        self.assertEqual(e.execute(self.grid())["status"], "SENT")
+        create = [c for c in tr.calls if c[1].endswith("/create")][0][2]
+        self.assertEqual(create["buOrderData"]["closeSellModel"], "TO_USDT")
+        bad = ex.Action("g1", "grid_cancel", "BTC_USDT", {"bu_order_id": "BU1", "close_model": "NOT_SELL"})
+        self.assertEqual(e.execute(bad)["status"], "REFUSED")
+        self.assertEqual(len(e.journal.open_bots()), 1)            # still counted against the cap
+        ok = ex.Action("g1", "grid_cancel", "BTC_USDT", {"bu_order_id": "BU1"})
+        self.assertEqual(e.execute(ok)["status"], "SENT")
+        cancel = [c for c in tr.calls if c[1].endswith("/cancel")][0][2]
+        self.assertEqual(cancel["closeSellModel"], "TO_USDT")
+
+    def test_n1_bot_finished_by_pionex_frees_its_slot(self):
+        e, tr = self.mk()
+        e.execute(self.grid())
+        e.execute(self.grid())
+        self.assertEqual(e.execute(self.grid())["status"], "REFUSED")        # max_positions
+        tr.ids = {"buOrderId": "BU1", "orderId": "O1"}
+        orders = [{"buOrderId": "BU1", "buOrderData": {"realizedProfit": "0.1"}}]
+
+        def req(method, path, query=None, body=None):
+            if method == "GET":
+                return {"result": True, "data": {"orders": orders if query["status"] == "finished" else []}}
+            return {"result": True, "data": {}}
+        tr.request = req
+        self.assertIsNone(e.poll_pnl()["halt"])
+        self.assertEqual(e.journal.open_bots(), [])
+
+    # N2
+    def test_n2_pagination_is_followed(self):
+        e, tr = self.mk()
+        e.execute(self.grid())
+        pages = {None: ([{"buOrderId": "OTHER"}], "p2"),
+                 "p2": ([{"buOrderId": "BU1", "buOrderData": {"realizedProfit": "-3.0"}}], None)}
+
+        def req(method, path, query=None, body=None):
+            if method == "GET":
+                orders, nxt = pages[query.get("pageToken")] if query["status"] == "running" else ([], None)
+                return {"result": True, "data": {"orders": orders, **({"nextPageToken": nxt} if nxt else {})}}
+            return {"result": True, "data": {}}
+        tr.request = req
+        out = e.poll_pnl()
+        self.assertAlmostEqual(out["total"], -3.0)                          # found on page 2
+        self.assertEqual(out["halt"], "DAY")
+
+    def test_n2_journalled_bot_missing_from_exchange_halts_day(self):
+        e, tr = self.mk()
+        e.execute(self.grid())
+        tr.orders = [{"buOrderId": "OTHER"}]
+        out = e.poll_pnl()
+        self.assertEqual(out["halt"], "DAY")
+        self.assertIn("not visible", out["error"])
+        self.assertEqual(e.execute(self.grid())["status"], "REFUSED")
+
+    def test_n2_repeating_page_token_fails_closed(self):
+        e, tr = self.mk()
+        tr.request = lambda m, p, query=None, body=None: {"result": True, "data": {"orders": [], "nextPageToken": "x"}}
+        self.assertEqual(e.poll_pnl()["halt"], "DAY")
+
+    # N3
+    def test_n3_limit_buy_refused(self):
+        e, tr = self.mk()
+        r = e.execute(self.spot("BUY", "LIMIT", price=65010, size=0.0001))
+        self.assertEqual(r["status"], "REFUSED")
+        self.assertIn("LIMIT BUY", r["reason"])
+        self.assertEqual([c for c in tr.calls if c[1] == "/api/v1/trade/order"], [])
+
+    # N4
+    def test_n4_grid_params_must_match_proof_gated(self):
+        e, tr = self.mk()
+        for over in ({"rows": 11}, {"top": 80000}, {"bottom": 50000}, {"type": "arithmetic"}, {"stop": 55000}):
+            a = self.grid()
+            a.params.update(over)
+            r = e.execute(a)
+            self.assertEqual(r["status"], "REFUSED", over)
+            self.assertIn("proof-gated", r["reason"])
+        self.assertEqual(tr.calls, [])
+        self.assertEqual(e.execute(self.grid())["status"], "SENT")            # equal params, lower invest
+
+    def test_n4_invest_above_proven_amount_refused(self):
+        e, _ = self.mk()
+        r = e.execute(self.grid(invest=10.0))
+        self.assertEqual(r["status"], "SENT")                                 # proven invest is 1000, clamped by caps
+        db = sqlite3.connect(self.var / "shadow_grid.db")
+        db.execute("UPDATE grids SET params=?", (json.dumps({"symbol": "BTC_USDT", "invest": 5.0, "rows": 10,
+                                                             "top": 70000, "bottom": 60000}),))
+        db.commit()
+        db.close()
+        ph = gate.params_hash({"symbol": "BTC_USDT", "invest": 5.0, "rows": 10, "top": 70000, "bottom": 60000})
+        self.log.write_text(LOG_HEAD + "| g1 | HOLDS | d | e | " + ph + " |\n", encoding="utf-8")
+        r = e.execute(self.grid(invest=9.0))
+        self.assertIn("above the proof-gated", r["reason"])
+
+    def test_n4_book_orders_refused_by_default(self):
+        e, tr = self.mk()
+        ex.BOOK_ORDERS_ENABLED = False
+        r = e.execute(self.spot("BUY", amount=5))
+        self.assertEqual(r["status"], "REFUSED")
+        self.assertIn("no signal-driven", r["reason"])
+        self.assertEqual([c for c in tr.calls if c[1] == "/api/v1/trade/order"], [])
 
 
 class CoverageRules(unittest.TestCase):

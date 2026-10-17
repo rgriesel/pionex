@@ -38,7 +38,7 @@ AGENTS = [
      {"effort": "medium", "turns": 100, "usd": 2, "daily": 5}, (False, False)),
     ("Quant", "engineer", "Quant / Backtester", "sonnet", "quant.md", 7200,
      "Pre-registered backtests with the lab frameworks; logs every verdict",
-     {"effort": None, "turns": 150, "usd": 5, "daily": 10}, (False, True)),
+     {"effort": None, "turns": 150, "usd": 5, "daily": 20}, (False, True)),
     ("Red Team", "qa", "Red Team (read-only reviewer)", "opus", "red-team.md", 3600,
      "Tries to break every PASS: look-ahead, bookkeeping, data, selection, costs",
      {"effort": None, "turns": 60, "usd": 4, "daily": 4}, (False, False)),

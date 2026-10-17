@@ -435,6 +435,25 @@ def cmd_live_gate(args, paths, cfg, mandate):
     return 0
 
 
+def cmd_trials(args, paths, cfg, mandate):
+    """Firm-wide trial registry (CLO-44): print N, the count every luck test deflates against."""
+    from .research import luck
+    reg = paths.root / "trials.db"
+    if args.backfill or not reg.exists():
+        print("backfill:", luck.backfill(reg, PROJECT_ROOT / "docs" / "STRATEGY_LOG.md", paths.reports))
+    n = luck.trial_count(reg)
+    print(f"trials registered: {n} (tightening level {luck.level(n)})")
+    return 0
+
+
+def cmd_luck(args, paths, cfg, mandate):
+    """Luck-proofing suite for one strategy id (CLO-44); writes var/reports/luck_<id>.json."""
+    from .research import luck
+    rep = luck.luck_report(args.strategy, paths)
+    print(luck.render(rep))
+    return 0 if rep["luck_eligible"] else 2
+
+
 def cmd_live_poll(args, paths, cfg, mandate):
     """Loss-stop poll (CLO-43): only works when the executor is armed; schedule it every few minutes while armed."""
     from .live import executor
@@ -784,6 +803,10 @@ def main(argv=None) -> int:
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
     sub.add_parser("live-poll", help="armed only: poll equity P&L and trip the daily/absolute loss stops")
+    p = sub.add_parser("trials", help="firm-wide trial registry count (var/trials.db); --backfill re-reads the log")
+    p.add_argument("--backfill", action="store_true")
+    p = sub.add_parser("luck", help="luck-proofing suite for one strategy id (research only)")
+    p.add_argument("strategy")
     sub.add_parser("live-gate", help="proof gate + live executor DRY-RUN: report ELIGIBLE strategies (no orders)")
     p = sub.add_parser("shadow-grid", help="forward SPOT grid bots on live Pionex prices (paper, public data)")
     p.add_argument("--once", action="store_true")

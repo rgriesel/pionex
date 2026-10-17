@@ -20,6 +20,16 @@ PHB = gate.params_hash({"usdt": 100.0})
 BASE_MANDATE = Path(__file__).resolve().parent.parent / "config" / "mandate.v1.json"
 
 
+def luck_ok(var, sid, now_ms):
+    return True, "test: luck suite stubbed (see test_luck.py for the real checks)"
+
+
+def _patch_luck(case, fn=luck_ok):
+    old = gate.luck_check
+    gate.luck_check = fn
+    case.addCleanup(setattr, gate, "luck_check", old)
+
+
 def mk_mandate(cfg: Path, **over):
     """A LIVE-armed test mandate in a temp config dir (the real mandate is never touched)."""
     raw = json.loads(BASE_MANDATE.read_text(encoding="utf-8"))
@@ -62,7 +72,10 @@ def mk_grid_db(var: Path, gid="g1", days=31, trips=25, end_eq=1010.0, dip=None, 
 
 
 class GateRules(unittest.TestCase):
+    _real = staticmethod(gate.luck_check)
+
     def setUp(self):
+        _patch_luck(self)
         self.d = tempfile.TemporaryDirectory()
         self.var = Path(self.d.name)
         self.cfg = self.var / "cfg"
@@ -84,6 +97,25 @@ class GateRules(unittest.TestCase):
     def test_all_pass_is_eligible(self):
         mk_grid_db(self.var)
         self.assertTrue(self.res()["g1"].eligible)
+
+    def test_luck_failure_blocks_eligibility(self):
+        mk_grid_db(self.var)
+        _patch_luck(self, lambda var, sid, now: (False, "luck tests failed: T2_deflated_sharpe"))
+        self.assertIn("luck_tests", self.failed())
+        self.assertFalse(self.res()["g1"].eligible)
+
+    def test_luck_check_error_fails_closed(self):
+        mk_grid_db(self.var)
+
+        def boom(var, sid, now):
+            raise RuntimeError("x")
+        _patch_luck(self, boom)
+        self.assertIn("luck_tests", self.failed())
+
+    def test_real_luck_check_rejects_ids_without_a_report(self):
+        mk_grid_db(self.var)
+        gate.luck_check = self._real
+        self.assertIn("luck_tests", self.failed())
 
     def test_too_few_days(self):
         mk_grid_db(self.var, days=29.5)
@@ -199,6 +231,7 @@ class FakeTransport:
 
 class ExecutorRules(unittest.TestCase):
     def setUp(self):
+        _patch_luck(self)
         self.d = tempfile.TemporaryDirectory()
         self.var = Path(self.d.name)
         self.cfg = self.var / "cfg"

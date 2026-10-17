@@ -71,6 +71,20 @@ allowed symbols, limits, lock) and switches live on; the firm never does that st
 - Historical research data from other venues (Binance archives) is PROXY: it must be labelled, must track
   Pionex (tracking check), and the final proof always comes from forward trading on live Pionex prices.
 
+## Adapt or die (owner, 2026-10-17)
+Markets change; the firm detects change fast and responds by rule, not by hope.
+- Detect: the program watches (a) market regime on live Pionex data (volatility, trend strength, correlation
+  between coins, spread/liquidity, funding) and (b) each live/shadow strategy against its own design
+  (CUSUM / changepoint test on its realised returns vs the expected distribution, fill quality, slippage).
+- Respond, in this order: the monitor STOPS or shrinks a strategy that has left its design (stop-only power);
+  the program re-allocates capital only among strategies that are currently ELIGIBLE; research agents re-test
+  on rolling windows and, if the regime really changed, build or re-fit a strategy by a PRE-REGISTERED
+  procedure (never by tuning on the latest week) and it must pass the full gate and luck-proofing again.
+- Retire what has decayed: a strategy whose live record falls outside its backtest range is stopped and
+  logged as retired; nothing stays live out of loyalty.
+- Speed matters: regime check every 5 minutes on live data, strategy-health check hourly, change alerts to
+  the owner on Telegram only when action was taken or is needed.
+
 ## Luck-proofing (every strategy, before the gate can open)
 A strategy must beat luck, not just look good: firm-wide trial registry (every test and variant ever run is
 counted), deflated Sharpe / multiple-testing correction against that count, probability of backtest

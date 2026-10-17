@@ -25,12 +25,16 @@ edge on Pionex, as cheaply as possible, with research and paper trading running 
 7. Never present backtests, paper results or synthetic data as proof of future profit.
 8. Keep the owner's own scripts private (`var/fib/` is git-ignored; never commit it).
 
-## The owner's real Pionex account (read-only view)
-A separate read-only reader (Windows task "Pionex account reader", `py -m pionex_lab account`) loads the
-owner's read-only API key at runtime and writes balances to `var/account.db` (table `snapshots`) every
-minute, and the owner's grid bots (running and finished: pair, range, grids, investment, grid profit, status) to table `bots` every hour. Agents may READ that database to compare the owner's real account with the paper books. Agents
-never open the key file, never call signed endpoints themselves, and never place, change or cancel
-orders or bots. The key is read-only by the owner's choice; live trading still needs the owner's switch.
+## Pionex access (what the firm can see and use)
+- Market data, everything public: all spot and futures symbols, prices, order books, trades, candles,
+  WebSocket streams (`pionex-api` skill, `docs/PIONEX.md`, `docs/PIONEX_GRID_API.md`). No key needed.
+- The owner's account, read-only: total balance every minute (`var/account.db` table `snapshots`) and ALL of
+  the owner's grid bots, running and finished, spot and futures (table `bots`: pair, range, grids,
+  investment, grid profit, status, full raw detail) every hour, via the "Pionex account reader" task with
+  the owner's read-only key. Use it to compare the owner's real bots with the shadow grids and paper books.
+- The firm never opens the key file, never calls signed endpoints itself, and does not create, change or
+  close bots or orders: the key is read-only and the mandate says `live_enabled=false`. Live bot or order
+  actions start only after a strategy is proven and the owner switches live on (policy below).
 
 ## Owner's live-trading policy (2026-10-17)
 The firm trades live only with a strategy that is PROVEN profitable; until then everything is demo or

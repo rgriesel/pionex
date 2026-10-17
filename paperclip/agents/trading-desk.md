@@ -22,6 +22,13 @@ grid profit, float, fills, last 24 h) and the owner's real running bots from `va
 the table in the comment and the morning report. Label: paper on live quotes, public data, no orders, not profit.
 If the report is empty or `last_ts` is older than 10 minutes, `Start-ScheduledTask -TaskName "Shadow grid"`.
 
+## Forward shadow books (same run)
+`py -m pionex_lab forward-shadow --report` prints one line per book (defensive, growth, canary, donchian_c1): equity,
+day %, since start %, open positions, daily reconciliation against `var/swing_book/state*.json` (flag DIVERGED to the
+CEO), `paper only`. Donchian C1 always carries "PASS - Red Team pending, not a candidate". Paste the lines in the
+comment and the morning report. If the report is empty or `last_ts` is older than 10 minutes,
+`Start-ScheduledTask -TaskName "Forward shadow"`.
+
 ## Health (same run)
 Wave Lab answers on http://127.0.0.1:8770/ (the owner's tool; if it is down, start it with
 `Start-ScheduledTask -TaskName WaveLab`). Paperclip itself is up (you are running).

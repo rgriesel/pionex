@@ -410,6 +410,19 @@ def cmd_wave_alerts(args, paths, cfg, mandate):
     return run(paths, _stop_event(), once=args.once)
 
 
+def cmd_forward_shadow(args, paths, cfg, mandate):
+    """CTA v1.1 books + Donchian C1 forward on live Pionex quotes (paper, no keys, no orders): live/forward_shadow.py."""
+    from .live import forward_shadow
+    paths.ensure()
+    if args.report:
+        rep = forward_shadow.report(paths)
+        (paths.reports / "forward_shadow.json").write_text(json.dumps(rep, indent=2), encoding="utf-8")
+        print(forward_shadow.render(rep))
+        return 0
+    _setup_logging(paths, "forward_shadow", args.verbose)
+    return forward_shadow.run(paths, _stop_event(), once=args.once)
+
+
 def cmd_shadow_grid(args, paths, cfg, mandate):
     """Forward SPOT grid bots on live Pionex public prices (paper, no keys, no orders): live/shadow_grid.py."""
     from .live import shadow_grid
@@ -748,6 +761,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("shadow-grid", help="forward SPOT grid bots on live Pionex prices (paper, public data)")
     p.add_argument("--once", action="store_true")
     p.add_argument("--report", action="store_true", help="print the daily report instead of running")
+    p = sub.add_parser("forward-shadow", help="CTA v1.1 books + Donchian C1 forward on live Pionex quotes (paper, public data)")
+    p.add_argument("--once", action="store_true")
+    p.add_argument("--report", action="store_true", help="print the daily lines instead of running")
     p = sub.add_parser("waves", help="Wave Lab: local Elliott Wave charting, scanner, watchlists, alerts")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8770)

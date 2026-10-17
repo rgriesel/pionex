@@ -118,7 +118,7 @@ def bot_row(now: int, summary: dict, detail: dict | None) -> dict:
     fl = None if grid is None or realized is None else str(float(realized) - float(grid))
     top, bottom = _first(o, "top"), _first(o, "bottom")
     return {"at": now, "bu_order_id": _first(s, "buOrderId") or _first(o, "buOrderId"),
-            "type": _first(s, "buOrderType"), "pair": _first(s, "base") and f"{s.get('base')}_{s.get('quote')}",
+            "type": _first(s, "buOrderType"), "pair": f"{s['base']}_{s['quote']}" if s.get("base") and s.get("quote") else None,
             "range": None if top is None or bottom is None else f"{bottom}-{top}",
             "grids": _first(o, "row"), "investment": _num(_first(o, "quoteTotalInvestment", "quoteInvestment")),
             "grid_profit": grid, "float_profit": fl, "status": _first(o, "status") or _first(s, "status"),
@@ -132,20 +132,25 @@ def bots_once(paths, creds, now_ms: int | None = None, get=signed_get) -> list[d
     rows = []
     try:
         for status in ("running", "finished"):
-            token, seen = None, 0
+            if len(rows) >= MAX_BOTS:
+                break
+            token = None
             for _ in range(MAX_PAGES):
                 q = {"status": status, **({"pageToken": token} if token else {})}
                 items, token = _orders(get(creds, BOT_LIST, q))
-                for s in items[:max(0, MAX_BOTS - len(rows))]:
+                for s in [i for i in items if isinstance(i, dict)][:max(0, MAX_BOTS - len(rows))]:
                     path, bid = BOT_DETAIL.get(s.get("buOrderType")), s.get("buOrderId")
                     detail = get(creds, path, {"buOrderId": bid}) if path and bid else None
                     rows.append(bot_row(now, s, detail))
                 if not token or len(rows) >= MAX_BOTS:
                     break
-    except AccountReadError as exc:
+        if not rows:   # marker row keeps the hourly cadence even with no bots or an unrecognised list shape
+            raise AccountReadError("no bots parsed from the list response")
+    except Exception as exc:   # never let the bot pass stop the balance snapshots
+        msg = str(exc) if isinstance(exc, AccountReadError) else f"unexpected {type(exc).__name__}"
         rows.append({"at": now, "bu_order_id": None, "type": None, "pair": None, "range": None, "grids": None,
                      "investment": None, "grid_profit": None, "float_profit": None, "status": None,
-                     "raw": None, "error": str(exc)[:500]})
+                     "raw": None, "error": msg[:500]})
     cols = ("at", "bu_order_id", "type", "pair", "range", "grids", "investment", "grid_profit", "float_profit",
             "status", "raw", "error")
     conn = connect(paths)
@@ -179,8 +184,11 @@ def run(paths, stop, once: bool = False) -> int:
         if row["error"]:
             log.warning("account read failed: %s", row["error"])
         if bots_due(paths, row["at"]):
-            for b in bots_once(paths, creds, row["at"]):
-                if b["error"]:
-                    log.warning("bot read failed: %s", b["error"])
+            try:
+                for b in bots_once(paths, creds, row["at"]):
+                    if b["error"]:
+                        log.warning("bot read failed: %s", b["error"])
+            except sqlite3.Error as exc:
+                log.warning("bot store failed: %s", type(exc).__name__)
         if once or stop.wait(poll):
             return 0 if not row["error"] else 3

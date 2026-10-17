@@ -149,6 +149,17 @@ class BotReader(unittest.TestCase):
         finally:
             cleanup(d)
 
+    def test_empty_or_odd_list_still_writes_marker_row(self):
+        paths, d = tmp_paths()
+        try:
+            for body in ({"data": {"orders": []}}, {"data": {"orders": ["x", 3]}}):
+                rows = account_reader.bots_once(paths, self.creds, now_ms=T0, get=lambda c, p, q=None, b=body: b)
+                self.assertEqual(len(rows), 1)
+                self.assertIn("no bots parsed", rows[0]["error"])
+            self.assertFalse(account_reader.bots_due(paths, T0 + 60_000))
+        finally:
+            cleanup(d)
+
     def test_no_write_verbs_in_reader_sources(self):
         from pathlib import Path
         for mod in (account, account_reader):

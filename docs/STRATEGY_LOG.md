@@ -51,3 +51,4 @@ repeats.
 | 2026-10-13 | BTC/ETH daily EMA50 state | guidance report `trend` |
 | 2026-10-13 | WL Oscillator BTC 4h diamonds | guidance report `oscillator` |
 | 2026-10-14 | Live Binance spot order-book depth (±0.2/0.5/1%) | `var/orderbook/live.db` |
+| 2026-10-17 | Shadow SPOT grids on live Pionex quotes (BTC narrow/medium/wide, ETH medium; 1000 paper USDT each; CLO-30), paper only | `var/shadow_grid.db`, `py -m pionex_lab shadow-grid --report` |

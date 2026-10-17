@@ -1,5 +1,5 @@
 # Cloudworks watchdog: every 5 minutes (task "Cloudworks watchdog"), make sure Paperclip, Wave Lab and the
-# Wave Lab alerts are running; restart what is down and tell the owner (critical Telegram, once a day per
+# Wave Lab alerts and the Shadow grid are running; restart what is down and tell the owner (critical Telegram, once a day per
 # service). Read-only otherwise. Log: var\logs\watchdog.log
 $repo = "C:\Users\Desj Griesel\pionex"
 $log = "$repo\var\logs\watchdog.log"
@@ -38,5 +38,9 @@ Check "WaveLab" "WaveLab" { Listening 8770 } {
 Check "WaveLabAlerts" "WaveLab Alerts" {
     [bool](Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'wave-alerts' }) } {
     Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'wave-alerts' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+
+Check "ShadowGrid" "Shadow grid" {
+    [bool](Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'shadow-grid' }) } {
+    Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'shadow-grid' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
 
 $st | ConvertTo-Json | Set-Content -Path $state -Encoding utf8

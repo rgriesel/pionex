@@ -410,6 +410,19 @@ def cmd_wave_alerts(args, paths, cfg, mandate):
     return run(paths, _stop_event(), once=args.once)
 
 
+def cmd_shadow_grid(args, paths, cfg, mandate):
+    """Forward SPOT grid bots on live Pionex public prices (paper, no keys, no orders): live/shadow_grid.py."""
+    from .live import shadow_grid
+    paths.ensure()
+    if args.report:
+        rep = shadow_grid.report(paths)
+        (paths.reports / "shadow_grid.json").write_text(json.dumps(rep, indent=2), encoding="utf-8")
+        print(shadow_grid.render(rep))
+        return 0
+    _setup_logging(paths, "shadow_grid", args.verbose)
+    return shadow_grid.run(paths, _stop_event(), once=args.once)
+
+
 def cmd_waves(args, paths, cfg, mandate):
     """Wave Lab: local Elliott Wave charts, scanner, watchlists and alerts (read-only)."""
     from .waves.feeds import pick_feed
@@ -732,6 +745,9 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
+    p = sub.add_parser("shadow-grid", help="forward SPOT grid bots on live Pionex prices (paper, public data)")
+    p.add_argument("--once", action="store_true")
+    p.add_argument("--report", action="store_true", help="print the daily report instead of running")
     p = sub.add_parser("waves", help="Wave Lab: local Elliott Wave charting, scanner, watchlists, alerts")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8770)

@@ -28,7 +28,7 @@ edge on Pionex, as cheaply as possible, with research and paper trading running 
 ## The owner's real Pionex account (read-only view)
 A separate read-only reader (Windows task "Pionex account reader", `py -m pionex_lab account`) loads the
 owner's read-only API key at runtime and writes balances to `var/account.db` (table `snapshots`) every
-minute. Agents may READ that database to compare the owner's real account with the paper books. Agents
+minute, and the owner's grid bots (running and finished: pair, range, grids, investment, grid profit, status) to table `bots` every hour. Agents may READ that database to compare the owner's real account with the paper books. Agents
 never open the key file, never call signed endpoints themselves, and never place, change or cancel
 orders or bots. The key is read-only by the owner's choice; live trading still needs the owner's switch.
 

@@ -190,3 +190,10 @@ class HumanLine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveBotListShape(unittest.TestCase):
+    def test_results_and_next_page_token(self):
+        from pionex_lab.runtime.account_reader import _orders
+        items, token = _orders({"data": {"results": [{"buOrderId": "a"}], "nextPageToken": "p2"}, "result": True})
+        self.assertEqual((len(items), token), (1, "p2"))     # the shape Pionex returned on 2026-10-17

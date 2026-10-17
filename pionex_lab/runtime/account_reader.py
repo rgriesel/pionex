@@ -99,9 +99,9 @@ def _orders(body: dict) -> tuple[list, str | None]:
     if isinstance(data, list):
         return data, None
     if isinstance(data, dict):
-        for k in ("orders", "list", "buOrders", "rows"):
+        for k in ("results", "orders", "list", "buOrders", "rows"):   # live API (2026-10-17): data.results
             if isinstance(data.get(k), list):
-                return data[k], data.get("pageToken") or None
+                return data[k], data.get("nextPageToken") or data.get("pageToken") or None
     return [], None
 
 

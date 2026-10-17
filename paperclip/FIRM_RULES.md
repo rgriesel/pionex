@@ -36,6 +36,19 @@ edge on Pionex, as cheaply as possible, with research and paper trading running 
   close bots or orders: the key is read-only and the mandate says `live_enabled=false`. Live bot or order
   actions start only after a strategy is proven and the owner switches live on (policy below).
 
+## Fully autonomous company: who does what (owner, 2026-10-17)
+- Agents (Claude Code, Codex fallback, every Paperclip agent) BUILD and TEST strategies and save them. No agent
+  places, changes or cancels an order, and no agent flips the live switch. Codex is a fallback for the same
+  roles under the same rules.
+- The PROGRAM (pionex_lab/live/gate.py + executor.py, plain code) is the gate and the only thing that trades:
+  a strategy that passes every gate (pre-registered test, Red Team HOLDS, forward record, profit after fees,
+  drawdown limit) is switched live BY THE PROGRAM, inside the envelope the owner set once in the mandate
+  (live permitted, capital, symbols, max leverage). Every order carries a stop-loss and a take-profit.
+- A MONITOR agent (read-only) watches live trades against what the strategy was designed to do (expected
+  entries, stop, drawdown, slippage). On a deviation it may only STOP things (write var/LIVE_STOP for that
+  strategy or all), never open or change positions, and it notifies the owner on Telegram.
+- The owner can still kill everything: var/LIVE_STOP, or live off in the mandate.
+
 ## Owner's live-trading policy (2026-10-17)
 The firm trades live only with a strategy that is PROVEN profitable; until then everything is demo or
 forward testing on live Pionex prices. Pionex demo facts (support.pionex.com "Futures Demo Trading"):

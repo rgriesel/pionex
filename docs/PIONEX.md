@@ -63,3 +63,9 @@ Paper only (`live_enabled=false`; never edit the mandate or its lock). No orders
 ## Open gaps
 
 VIP fee table not read; bot minimums only from old or marketing pages; the client charges `symbols` as weight 1 though the docs say 5; WebSocket per-connection topic cap not documented; 4H/8H/12H bar alignment not checked. See `.claude/skills/pionex-api/references/verification-2026-10-14.md`.
+
+## Demo trading (checked 2026-10-17)
+Pionex demo is manual futures only: demo PUSD claimed in Futures -> Demo (app) or Futures Trading (web),
+KYC Level 1 required, PUSD cannot be used with any bot (spot or futures grid) and there is no demo API
+(support.pionex.com/hc/en-us/articles/45361340740761-Futures-Demo-Trading). Spot grid bots have no demo,
+so the firm forward-tests them as live shadow grids on real-time Pionex prices.

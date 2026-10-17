@@ -32,6 +32,16 @@ minute, and the owner's grid bots (running and finished: pair, range, grids, inv
 never open the key file, never call signed endpoints themselves, and never place, change or cancel
 orders or bots. The key is read-only by the owner's choice; live trading still needs the owner's switch.
 
+## Owner's live-trading policy (2026-10-17)
+The firm trades live only with a strategy that is PROVEN profitable; until then everything is demo or
+forward testing on live Pionex prices. Pionex demo facts (support.pionex.com "Futures Demo Trading"):
+demo exists only for MANUAL futures (demo PUSD, KYC Level 1, app/web), no bots, no spot-grid demo, no
+demo API. Therefore: spot grids are proven with the live shadow grids (CLO-30, real-time Pionex prices,
+exact Pionex grid rules); normal strategies with forward tests on live Pionex quotes. "Proven" = the
+written gates in docs/FIRM.md (pre-registered backtest, Red Team HOLDS, >= 60 days forward inside the
+backtest's ranges, Risk Officer READY FOR OWNER REVIEW). Then the owner finishes the mandate (mode,
+allowed symbols, limits, lock) and switches live on; the firm never does that step itself.
+
 ## Evidence standard (quant work)
 Pre-register rules and pass criteria (with a timestamp) before running; run once; walk-forward or an
 untouched out-of-sample period; decisions on closed bars, fills at the next open; Pionex costs

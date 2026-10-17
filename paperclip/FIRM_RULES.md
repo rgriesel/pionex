@@ -37,9 +37,8 @@ The firm trades live only with a strategy that is PROVEN profitable; until then 
 forward testing on live Pionex prices. Pionex demo facts (support.pionex.com "Futures Demo Trading"):
 demo exists only for MANUAL futures (demo PUSD, KYC Level 1, app/web), no bots, no spot-grid demo, no
 demo API. Therefore: spot grids are proven with the live shadow grids (CLO-30, real-time Pionex prices,
-exact Pionex grid rules); normal strategies with forward tests on live Pionex quotes. "Proven" = the
-written gates in docs/FIRM.md (pre-registered backtest, Red Team HOLDS, >= 60 days forward inside the
-backtest's ranges, Risk Officer READY FOR OWNER REVIEW). Then the owner finishes the mandate (mode,
+exact Pionex grid rules); normal strategies with forward tests on live Pionex quotes. "Proven" = a pre-registered test that PASSES, a Red Team HOLDS (fixes re-run) and the Risk Officer's
+READY FOR OWNER REVIEW; no minimum paper period (owner, 2026-10-17). Then the owner finishes the mandate (mode,
 allowed symbols, limits, lock) and switches live on; the firm never does that step itself.
 
 ## Evidence standard (quant work)

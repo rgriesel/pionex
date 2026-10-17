@@ -1,5 +1,5 @@
 # Cloudworks watchdog: every 5 minutes (task "Cloudworks watchdog"), make sure Paperclip, Wave Lab and the
-# Wave Lab alerts, the Shadow grid and the Forward shadow books are running; restart what is down and tell the owner (critical Telegram, once a day per
+# Wave Lab alerts, the Shadow grid, the Forward shadow books and the Regime watch are running; restart what is down and tell the owner (critical Telegram, once a day per
 # service). Read-only otherwise. Log: var\logs\watchdog.log
 $repo = "C:\Users\Desj Griesel\pionex"
 $log = "$repo\var\logs\watchdog.log"
@@ -47,4 +47,9 @@ Check "ForwardShadow" "Forward shadow" {
     [bool](Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'forward-shadow' }) } {
     Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'forward-shadow' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
 
+Check "RegimeWatch" "Regime watch" {
+    [bool](Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'regime-watch' }) } {
+    Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'regime-watch' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+
+try { Push-Location $repo; & py paperclip\engine_switch.py | Out-Null; Pop-Location } catch {}   # Claude <-> Codex fallback
 $st | ConvertTo-Json | Set-Content -Path $state -Encoding utf8

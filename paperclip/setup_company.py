@@ -67,6 +67,10 @@ ROUTINES = [
      "Follow 'YouTube BTC calls' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("Weekly risk review of the paper books", "Risk Officer", "5 9 * * 1",
      "Follow 'Weekly paper review' in your AGENTS.md.", "skip_missed"),
+    ("Regime change review", "CEO", "15 8 * * *",
+     "Review open issues titled 'Regime change:' (opened by the Regime watch, pionex_lab/live/regime.py): read the Quant's "
+     "walk-forward re-test table, decide re-fit / retire / no action under FIRM_RULES 'Adapt or die', brief the board in 5 lines.",
+     "skip_missed"),
     ("Weekly firm review & improvement", "Firm Improvement", "5 10 * * 0",
      "Follow 'Weekly review' in your AGENTS.md; address the proposals to the CEO.", "skip_missed"),
 ]
@@ -117,7 +121,8 @@ def main():
         }
         if name in existing:
             a = existing[name]
-            patch = {k: body[k] for k in ("title", "capabilities", "reportsTo", "adapterConfig", "runtimeConfig")}
+            keys = ("title", "capabilities", "reportsTo", "runtimeConfig") if a.get("adapterType") == "codex_local" else ("title", "capabilities", "reportsTo", "adapterConfig", "runtimeConfig")   # keep Codex agents on Codex (engine_switch.py)
+            patch = {k: body[k] for k in keys}
             call("PATCH", f"/agents/{a['id']}", patch)
             changed = []
             for path, text in body["instructionsBundle"]["files"].items():

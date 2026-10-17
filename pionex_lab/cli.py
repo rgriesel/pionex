@@ -423,6 +423,18 @@ def cmd_forward_shadow(args, paths, cfg, mandate):
     return forward_shadow.run(paths, _stop_event(), once=args.once)
 
 
+def cmd_live_gate(args, paths, cfg, mandate):
+    """Proof gate + live executor DRY-RUN (CLO-43): which strategies are ELIGIBLE; never sends an order."""
+    from .live import executor, gate
+    rep = executor.run_daily_dry(paths, PROJECT_ROOT / "docs" / "STRATEGY_LOG.md")
+    if "error" in rep:
+        print("error:", rep["error"])
+        return 1
+    print("\n".join(f"{x['strategy_id']}: {'ELIGIBLE' if x['eligible'] else 'no'}" for x in rep["strategies"]))
+    print("live blocked by:", "; ".join(rep["live_blocked_by"]) or "nothing")
+    return 0
+
+
 def cmd_shadow_grid(args, paths, cfg, mandate):
     """Forward SPOT grid bots on live Pionex public prices (paper, no keys, no orders): live/shadow_grid.py."""
     from .live import shadow_grid
@@ -758,6 +770,7 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int)
     p.add_argument("--allow-remote", action="store_true")
     p.add_argument("--url-file", help=argparse.SUPPRESS)
+    sub.add_parser("live-gate", help="proof gate + live executor DRY-RUN: report ELIGIBLE strategies (no orders)")
     p = sub.add_parser("shadow-grid", help="forward SPOT grid bots on live Pionex prices (paper, public data)")
     p.add_argument("--once", action="store_true")
     p.add_argument("--report", action="store_true", help="print the daily report instead of running")

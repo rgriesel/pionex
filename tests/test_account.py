@@ -86,6 +86,77 @@ class SignedGet(unittest.TestCase):
         self.assertIn("<redacted>", str(cm.exception))
 
 
+class BotReader(unittest.TestCase):
+    creds = account.Credentials(KEY, SECRET, "test")
+    ALLOWED = {"/api/v1/bot/orders", "/api/v1/bot/orders/spotGrid/order", "/api/v1/bot/orders/futuresGrid/order"}
+
+    def test_bot_allowlist_is_exactly_the_three_get_paths(self):
+        self.assertEqual(set(account.BOT_PATHS), self.ALLOWED)
+        self.assertEqual({p for p in account.READ_ONLY_PATHS if "/bot/" in p}, self.ALLOWED)
+        for path in ("/api/v1/bot/orders/spotGrid/checkParams", "/api/v1/bot/orders/spotGrid/create",
+                     "/api/v1/bot/orders/spotGrid/cancel", "/api/v1/bot/orders/futuresGrid/checkParams",
+                     "/api/v1/bot/orders/spotGrid/aiStrategy"):
+            with self.assertRaises(account.AccountReadError):
+                account.signed_get(self.creds, path, opener=lambda *a, **k: self.fail("network touched"))
+
+    def test_reader_sends_only_get_to_allowlisted_paths(self):
+        from urllib.parse import urlparse
+        seen = []
+
+        def opener(req, timeout):
+            seen.append((req.get_method(), urlparse(req.full_url).path, req.data))
+            p = seen[-1][1]
+            if p == "/api/v1/bot/orders":
+                return Resp(json.dumps({"result": True, "data": {"orders": [
+                    {"buOrderId": "b1", "buOrderType": "spot_grid", "base": "BTC", "quote": "USDT"},
+                    {"buOrderId": "b2", "buOrderType": "futures_grid", "base": "ETH.PERP", "quote": "USDT"}]}}).encode())
+            return Resp(json.dumps({"result": True, "data": {"buOrderData": {
+                "top": "2", "bottom": "1", "row": 10, "quoteTotalInvestment": "100", "gridProfit": "1.5",
+                "realizedProfit": "2.0", "status": "running"}}}).encode())
+        paths, d = tmp_paths()
+        try:
+            rows = account_reader.bots_once(paths, self.creds, now_ms=T0,
+                                            get=lambda c, p, q=None: account.signed_get(c, p, q, opener=opener))
+            self.assertTrue(seen)
+            for method, path, data in seen:
+                self.assertEqual(method, "GET")
+                self.assertIsNone(data)
+                self.assertIn(path, self.ALLOWED)
+            self.assertEqual(rows[0]["range"], "1-2")
+            self.assertEqual(rows[0]["float_profit"], "0.5")
+            self.assertEqual(rows[0]["pair"], "BTC_USDT")
+            self.assertNotIn(KEY, rows[0]["raw"])
+            c = account_reader.connect(paths, readonly=True)
+            self.assertGreater(c.execute("SELECT COUNT(*) FROM bots").fetchone()[0], 0)
+            c.close()
+        finally:
+            cleanup(d)
+
+    def test_missing_permission_is_one_error_row_no_retry(self):
+        calls = []
+
+        def get(c, p, q=None):
+            calls.append(p)
+            raise account.AccountReadError("HTTP 403 on /api/v1/bot/orders: no permission")
+        paths, d = tmp_paths()
+        try:
+            rows = account_reader.bots_once(paths, self.creds, now_ms=T0, get=get)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(len(rows), 1)
+            self.assertIn("403", rows[0]["error"])
+            self.assertFalse(account_reader.bots_due(paths, T0 + 60_000))
+            self.assertTrue(account_reader.bots_due(paths, T0 + 3_600_000))
+        finally:
+            cleanup(d)
+
+    def test_no_write_verbs_in_reader_sources(self):
+        from pathlib import Path
+        for mod in (account, account_reader):
+            text = Path(mod.__file__).read_text(encoding="utf-8")
+            for verb in ("POST", "DELETE", "PUT", "method=\"P"):
+                self.assertNotIn(verb, text, mod.__name__)
+
+
 class HumanLine(unittest.TestCase):
     def test_snapshot_store_and_indexed_line(self):
         paths, d = tmp_paths()

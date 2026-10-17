@@ -22,7 +22,9 @@ from pathlib import Path
 from .. import __version__
 
 BASE_URL = "https://api.pionex.com"
-READ_ONLY_PATHS = frozenset({"/api/v1/account/balances", "/api/v1/wallet/balancesFull", "/api/v1/trade/fills"})
+BOT_PATHS = ("/api/v1/bot/orders", "/api/v1/bot/orders/spotGrid/order", "/api/v1/bot/orders/futuresGrid/order")
+READ_ONLY_PATHS = frozenset({"/api/v1/account/balances", "/api/v1/wallet/balancesFull", "/api/v1/trade/fills",
+                             *BOT_PATHS})   # bot paths need the key's `Bot reading` permission only
 PREFERRED = ("PIONEX_API_KEY", "PIONEX_API_SECRET")   # the names the official CLI uses
 
 

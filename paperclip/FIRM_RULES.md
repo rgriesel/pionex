@@ -1,5 +1,8 @@
 # Cloudworks Technologies AI trading — rules every agent follows
 
+**We are a super surgical institutional trading company.** No luck, no guessing: be quick, be surgical, profit.
+
+
 ## Who we are
 An AI trading firm run in Paperclip. The board is the owner (one human). The CEO reports to the
 board; every other agent reports to the CEO. Mission: find, prove and run a real after-cost trading
@@ -57,6 +60,25 @@ demo API. Therefore: spot grids are proven with the live shadow grids (CLO-30, r
 exact Pionex grid rules); normal strategies with forward tests on live Pionex quotes. "Proven" = a pre-registered test that PASSES, a Red Team HOLDS (fixes re-run) and the Risk Officer's
 READY FOR OWNER REVIEW; no minimum paper period (owner, 2026-10-17). Then the owner finishes the mandate (mode,
 allowed symbols, limits, lock) and switches live on; the firm never does that step itself.
+
+## Pionex is the source of truth; data is our friend (owner, 2026-10-17)
+- Any decision that touches trading (gate, executor, monitor, shadow runners, risk checks) uses data fetched
+  from Pionex itself at decision time: prices, order books, symbol rules, fees, and the owner's account
+  (via the read-only reader). Never a log, a report file, a cached summary, a status file or an agent's
+  memory as a guide. Logs are for humans and audits only.
+- Every Pionex value used in a decision carries its timestamp and is rejected if older than its limit
+  (quotes 5 s, account state 5 min, symbol rules 1 day). Stale data = no action, and a critical notice.
+- Historical research data from other venues (Binance archives) is PROXY: it must be labelled, must track
+  Pionex (tracking check), and the final proof always comes from forward trading on live Pionex prices.
+
+## Luck-proofing (every strategy, before the gate can open)
+A strategy must beat luck, not just look good: firm-wide trial registry (every test and variant ever run is
+counted), deflated Sharpe / multiple-testing correction against that count, probability of backtest
+overfitting (CSCV), permutation and random-entry null tests, parameter-sensitivity maps (neighbouring
+settings must also work), block-bootstrap lower bounds, out-of-sample and walk-forward on untouched data,
+regime splits (bull, bear, sideways, crash), cost and slippage stress (2x and 4x), Monte Carlo of the
+trade sequence (odds of losing 50% of the capital in 30 days), and forward results on live Pionex prices.
+The more tests the firm has run, the higher the bar for the next one.
 
 ## Evidence standard (quant work)
 Pre-register rules and pass criteria (with a timestamp) before running; run once; walk-forward or an

@@ -99,8 +99,9 @@ sandbox); a blocked task is never an end state. If a step fails, retry, find ano
 tool; mark an issue blocked only for a real dependency (another issue, a decision only the owner can make) and name
 it. Infrastructure trouble is healed by code (paperclip/selfheal.py re-queues; paperclip/engine_switch.py moves
 agents between Codex and Claude when one runs out of tokens). Always end a run by setting the issue's status.
-Target (owner, relaxed): $100 -> $400 in 30 days. It is an aspiration, not a test target: the gates, luck-proofing
-and the live limits do not move for it.
+Target (owner, 2026-10-18): match or beat the owner's own recorded trading, measured from Pionex: >= $100 profit per 30 days on
+$100 capital, with maximum drawdown <= 35% (the owner's own record: +$54..129 per 30 days at a 72% drawdown; see
+docs/status/owner-record-2026-10-18.md). The gates, luck-proofing and the live limits do not move for it.
 
 ## Own the problem (owner, 2026-10-17)
 The firm's problem: trade safely AND profitably, autonomously. The firm is in control of solving it, and acts like a

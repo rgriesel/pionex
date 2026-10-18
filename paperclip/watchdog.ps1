@@ -47,4 +47,5 @@ Check "ForwardShadow" "Forward shadow" {
     [bool](Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'forward-shadow' }) } {
     Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -match 'forward-shadow' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
 
+try { Push-Location $repo; & py paperclip\selfheal.py | Out-Null; Pop-Location } catch {}   # re-queue infra-blocked issues
 $st | ConvertTo-Json | Set-Content -Path $state -Encoding utf8

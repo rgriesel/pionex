@@ -85,6 +85,15 @@ Markets change; the firm detects change fast and responds by rule, not by hope.
 - Speed matters: regime check every 5 minutes on live data, strategy-health check hourly, change alerts to
   the owner on Telegram only when action was taken or is needed.
 
+## Never stop (owner, 2026-10-17)
+Nobody is watching 24/7. The firm heals itself and keeps grinding: agents run with full access to this PC (no
+sandbox); a blocked task is never an end state. If a step fails, retry, find another route, or build the missing
+tool; mark an issue blocked only for a real dependency (another issue, a decision only the owner can make) and name
+it. Infrastructure trouble is healed by code (paperclip/selfheal.py re-queues; paperclip/engine_switch.py moves
+agents between Codex and Claude when one runs out of tokens). Always end a run by setting the issue's status.
+Target (owner, relaxed): $100 -> $400 in 30 days. It is an aspiration, not a test target: the gates, luck-proofing
+and the live limits do not move for it.
+
 ## Own the problem (owner, 2026-10-17)
 The firm's problem: trade safely AND profitably, autonomously. The firm is in control of solving it, and acts like a
 super surgical institutional trading company: it does not wait to be told.

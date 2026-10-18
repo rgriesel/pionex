@@ -1,0 +1,22 @@
+[
+  {
+    "ok": false,
+    "attempt": 1,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "ok": false,
+    "attempt": 2,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "ok": false,
+    "attempt": 3,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "ok": false,
+    "attempt": 4,
+    "error": "TimeoutError: timed out"
+  }
+]

@@ -86,5 +86,8 @@ Artifacts:
 - `tests/test_owner_method.py`
 
 Validation: 14 focused tests and 12 skill checks pass (synthetic accounting/timing tests, not
-profit evidence). Full repository and skill checks are recorded separately
-in the closeout when finished.
+profit evidence). Full repository discovery was attempted and stopped after 1,114 seconds
+without completion. It showed one error before losing progress in existing
+loopback-server tests; its failure details were not emitted. This is an
+incomplete broader check, not a suite PASS. The 14 focused tests also pass
+on the main integration baseline; all 12 skill checks pass.

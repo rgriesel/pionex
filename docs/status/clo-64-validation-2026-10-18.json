@@ -1,0 +1,32 @@
+{
+  "issue": "CLO-64",
+  "research_verdict": "INCOMPLETE_INPUTS",
+  "focused_tests": {
+    "run": 14,
+    "passed": 14
+  },
+  "skill_tests": {
+    "run": 12,
+    "passed": 12
+  },
+  "full_suite": {
+    "status": "INCOMPLETE",
+    "terminated_after_seconds": 1114,
+    "errors_observed_before_termination": 1,
+    "details": "Existing loopback-server tests stopped progressing; failure summary unavailable; only this run test process stopped."
+  },
+  "frozen_definition_hash_preserved": true,
+  "main_merge": "6985065",
+  "main_pushed": true,
+  "telegram": {
+    "attempted": true,
+    "result": "skipped (daily cap)"
+  },
+  "live_changes": false,
+  "desired_issue_status": "backlog",
+  "dependencies": [
+    "CLO-65 feature pipeline",
+    "Complete 65-bot immutable target/fill/fee/funding history",
+    "Causal analyst inputs and forward Pionex exit/hold ledger"
+  ]
+}

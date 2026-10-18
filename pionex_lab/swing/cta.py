@@ -114,7 +114,7 @@ def rebalance(w: dict, tgt: dict, tradable, band=0.02, equity=None, min_buy=MIN_
 
 
 def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=None, cost=None, coins=UNIVERSE,
-             scale=None, trace=None, universe=None, haircut=0.0):
+             scale=None, trace=None, universe=None, haircut=0.0, order_trace=None):
     """Daily loop at each 00:00 UTC open: book held coins' open-to-open returns since their last mark,
     drift the weights, decide targets on yesterday's close, rebalance. Returns
     [(interval start, net return, gross exposure, traded weight)]. `capital` (USDT) turns on the
@@ -191,7 +191,10 @@ def simulate(data, rule, sizing, start_ms=0, band=0.02, target=0.40, capital=Non
                 new = {s: v * f for s, v in new.items()}
         tradable = {s for s in coins if t in data[s]}
         usdt = None if capital is None else capital * min(eq, 1.0)  # allocation capped at `capital` (owner's cap)
+        before = dict(w) if order_trace is not None else None
         w, paid, traded = rebalance(w, new, tradable, band, usdt, cost=cost)
+        if order_trace is not None:
+            order_trace.append({"t": t, "before": before, "after": dict(w), "equity": usdt})
         for s in w:
             if s in tradable:
                 mark[s] = data[s][t]["o"]

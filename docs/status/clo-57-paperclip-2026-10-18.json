@@ -1,0 +1,58 @@
+[
+  {
+    "method": "POST",
+    "path": "/comments",
+    "ok": false,
+    "attempt": 1,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "POST",
+    "path": "/comments",
+    "ok": false,
+    "attempt": 2,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "POST",
+    "path": "/comments",
+    "ok": false,
+    "attempt": 3,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "POST",
+    "path": "/comments",
+    "ok": false,
+    "attempt": 4,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "PATCH",
+    "path": "",
+    "ok": false,
+    "attempt": 1,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "PATCH",
+    "path": "",
+    "ok": false,
+    "attempt": 2,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "PATCH",
+    "path": "",
+    "ok": false,
+    "attempt": 3,
+    "error": "TimeoutError: timed out"
+  },
+  {
+    "method": "PATCH",
+    "path": "",
+    "ok": false,
+    "attempt": 4,
+    "error": "TimeoutError: timed out"
+  }
+]

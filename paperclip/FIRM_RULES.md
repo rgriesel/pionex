@@ -85,6 +85,14 @@ Markets change; the firm detects change fast and responds by rule, not by hope.
 - Speed matters: regime check every 5 minutes on live data, strategy-health check hourly, change alerts to
   the owner on Telegram only when action was taken or is needed.
 
+## No blocked tasks (owner, 2026-10-18)
+The dashboard must never show blocked work. Paperclip and the trading program follow the same rules: no human in
+the loop, no blocking, self-heal, self-improve. Never set an issue to `blocked`. Waiting on another issue ->
+status `backlog` with the dependency named in a comment (it is promoted automatically when the dependency is
+done). Failed run -> retry or route around it. Superseded or duplicate -> cancel it with the reason. A decision only
+the owner can make -> make the sensible default yourself, record it, tell the owner on Telegram, and continue.
+The CEO's Monday problem map and the daily board report keep the owner informed instead of asking.
+
 ## Never stop (owner, 2026-10-17)
 Nobody is watching 24/7. The firm heals itself and keeps grinding: agents run with full access to this PC (no
 sandbox); a blocked task is never an end state. If a step fails, retry, find another route, or build the missing

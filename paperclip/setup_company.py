@@ -63,6 +63,8 @@ ROUTINES = [
      "pick at most 2 for the Quant, Red Team on any PASS, close with a 5-line summary.", "skip_missed"),
     ("Morning report to the board", "Trading Desk", "55 7 * * *",
      "Follow 'Morning report to the board' in your AGENTS.md.", "enqueue_missed_with_cap"),
+    ("Daily board report", "CEO", "15 8 * * *",
+     "Follow 'Daily board report' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("YouTube BTC calls", "Research Scout", "45 21 * * *",
      "Follow 'YouTube BTC calls' in your AGENTS.md.", "enqueue_missed_with_cap"),
     ("Weekly risk review of the paper books", "Risk Officer", "5 9 * * 1",

@@ -47,6 +47,9 @@ def main():
         cm = call("GET", f"/issues/{i['id']}/comments")
         text = " ".join((c.get("body") or "") for c in cm[:2]).lower() + " " + (i.get("description") or "").lower()[:200]
         if not any(k in text for k in INFRA) or any(k in text for k in OWNER_OR_DEPENDENT):
+            # nothing blocked on the dashboard: park it as backlog (promoted when its dependency is done)
+            r2 = call("PATCH", f"/issues/{i['id']}", {"status": "backlog"})
+            out.append(i["identifier"] + "->backlog")
             continue
         call("POST", f"/issues/{i['id']}/comments", {"body": f"Self-heal: re-queued automatically (attempt {rec['n'] + 1}/{MAX_REQUEUES}). "
                                                        "Finish the work, then set the issue to done, or blocked with the real reason and the owner of it."})

@@ -36,3 +36,18 @@ Write `docs/status/problem-map-<date>.md`: the 5 biggest gaps between us and a p
 strategy (data we lack, tools we lack, unknown risks, untested ideas). For each, open or update an issue for
 the right agent with a concrete first step. Prefer finding FREE data and building our own tools over waiting.
 Send the owner one `--level important` Telegram line only if you changed direction.
+
+## Daily board report (routine, 08:15; the owner's standing order)
+You grow this firm into a profitable, stable-income trading firm for the board member. Every morning write
+`docs/status/board-report-<date>.md` and send the owner a Telegram `--level daily --key board-<date>` summary
+(max 10 lines, numbers first), from FRESH data (Pionex, var/account.db, the program's own databases), never from
+old logs:
+1. PROFIT: net result since yesterday and since start for every live strategy (real P&L after fees), every
+   shadow/paper book and the shadow grids, and the owner's real account change (read-only). Label clearly which
+   money is real, which is simulated. State "no live trades yet" when true.
+2. IMPROVEMENT: what the firm built, tested, retired or fixed in the last 24 h (tests run, verdicts, trial count,
+   closest candidate to the gate and its distance).
+3. PLAN: the next 24 h and the 7-day plan to make money, the biggest blocker and what is being done about it,
+   and whether the dated timeline in your latest plan is on track or has been changed (and why).
+No human in the loop: never end the report with a question for the owner unless it is a decision only the owner
+can make (and then include your default and the date it takes effect).

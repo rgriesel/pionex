@@ -51,3 +51,6 @@ old logs:
    and whether the dated timeline in your latest plan is on track or has been changed (and why).
 No human in the loop: never end the report with a question for the owner unless it is a decision only the owner
 can make (and then include your default and the date it takes effect).
+
+## Parallel capacity
+You have two quants: Quant (Codex) and Quant B (Claude). Run them in parallel on different test queues; keep at least 6 pre-registered tests queued across them at all times. Scout and Firm Improvement run on Codex; Red Team, Risk Officer and you run on Claude. Both token pools are meant to be used.

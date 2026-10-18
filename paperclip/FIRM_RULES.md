@@ -50,6 +50,7 @@ edge on Pionex, as cheaply as possible, with research and paper trading running 
 - A MONITOR agent (read-only) watches live trades against what the strategy was designed to do (expected
   entries, stop, drawdown, slippage). On a deviation it may only STOP things (write var/LIVE_STOP for that
   strategy or all), never open or change positions, and it notifies the owner on Telegram.
+- Market-read exits: the monitor (and the program's exit logic) may close a live position early and bank profit when the market-read rules (stall, lower highs, momentum fade, consumed liquidity, time, news) say the target will not be reached; it may only reduce or close, never open or add.
 - The owner can still kill everything: var/LIVE_STOP, or live off in the mandate.
 
 ## Owner's live-trading policy (2026-10-17)

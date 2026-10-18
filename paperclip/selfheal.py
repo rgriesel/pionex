@@ -18,8 +18,8 @@ import urllib.request
 
 API = "http://127.0.0.1:3100/api"
 ROOT = Path(__file__).resolve().parent.parent
-MAX_REQUEUES = 4
-COOLDOWN = 20 * 60
+MAX_REQUEUES = 12
+COOLDOWN = 5 * 60
 INFRA = ("exhausted", "retried this issue", "missing remote disposition", "no live execution path", "quota",
          "daily", "heartbeat budget", "wakeup", "lost wake", "no durable", "unchanged_source_state")
 OWNER_OR_DEPENDENT = ("owner", "board action", "your action", "blocked on clo-", "first-class blocker", "prohibited for agents")
@@ -38,6 +38,10 @@ def main():
     st = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}
     now, out = time.time(), []
     cli = os.path.join(os.path.expandvars("%APPDATA%"), "npm", "paperclipai.cmd")
+    for a in call("GET", f"/companies/{cid}/agents"):     # clear stale error flags so the agent can run again
+        if a.get("status") == "error":
+            subprocess.run([cli, "agent", "resume", a["id"]], capture_output=True, shell=True, timeout=120)
+            out.append(a["name"] + ":resumed")
     for i in call("GET", f"/companies/{cid}/issues"):
         if i["status"] != "blocked" or not i.get("assigneeAgentId"):
             continue
@@ -46,7 +50,7 @@ def main():
             continue
         cm = call("GET", f"/issues/{i['id']}/comments")
         text = " ".join((c.get("body") or "") for c in cm[:2]).lower() + " " + (i.get("description") or "").lower()[:200]
-        if not any(k in text for k in INFRA) or any(k in text for k in OWNER_OR_DEPENDENT):
+        if (not any(k in text for k in INFRA) and not text.strip().startswith(("q", "clo"))) and any(k in text for k in OWNER_OR_DEPENDENT):
             # nothing blocked on the dashboard: park it as backlog (promoted when its dependency is done)
             r2 = call("PATCH", f"/issues/{i['id']}", {"status": "backlog"})
             out.append(i["identifier"] + "->backlog")

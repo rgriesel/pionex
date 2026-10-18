@@ -104,7 +104,8 @@ def codex_cfg(sc, name):
     timeout = next((a[5] for a in sc.AGENTS if a[0] == name), 3600)
     cfg = {"engine": "cli", "command": CODEX_EXE, "model": model, "modelReasoningEffort": effort, "cwd": sc.REPO,
            "dangerouslyBypassApprovalsAndSandbox": True, "timeoutSec": timeout, "graceSec": 30,
-           "bootstrapPromptTemplate": BOOTSTRAP}
+           "bootstrapPromptTemplate": BOOTSTRAP,
+           "env": {"CODEX_HOME": str(Path.home() / ".codex")}}   # use the real Codex login: no symlink into a managed home
     if name == "Research Scout":
         cfg["search"] = True
     return cfg
@@ -149,7 +150,8 @@ def main():
         c = agent["adapterConfig"]
         mismatch = (agent["adapterType"] != ("codex_local" if target == "codex" else "claude_local")
                     or c.get("model") != cfg["model"] or c.get("command") != cfg["command"]
-                    or bool(c.get("dangerouslyBypassApprovalsAndSandbox")) != bool(cfg.get("dangerouslyBypassApprovalsAndSandbox")))
+                    or bool(c.get("dangerouslyBypassApprovalsAndSandbox")) != bool(cfg.get("dangerouslyBypassApprovalsAndSandbox"))
+                    or (target == "codex" and "CODEX_HOME" not in (c.get("env") or {})))
         if target != cur or mismatch:
             call("PATCH", f"/agents/{aid}", {"adapterType": "codex_local" if target == "codex" else "claude_local",
                                               "replaceAdapterConfig": True, "adapterConfig": cfg})

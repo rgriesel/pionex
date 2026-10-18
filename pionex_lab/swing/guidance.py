@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FORWARD_START = "2026-10-13T00:00:00+00:00"   # the user's "start from today"
-SOURCES = ("More Crypto Online", "Daily Entry", "Chart Hackers")
+SOURCES = ("More Crypto Online", "Daily Entry", "Chart Hackers", "Owner")
 SAME_PRESENTER = ("Daily Entry", "Chart Hackers")   # both Dylan: not independent opinions
 SIDES = {"LONG": 1, "SHORT": -1}
 FEE_BPS = 5

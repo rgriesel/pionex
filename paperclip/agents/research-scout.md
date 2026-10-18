@@ -46,3 +46,8 @@ research/owner_method/claims.jsonl (video, timestamp, date, level or zone, direc
 'said' or 'seen on chart'. The Quant verifies the claims on Pionex data.
 
 After frames and transcript are extracted, delete the video file (keep frames, subtitles and the method cards); disk space is limited.
+
+## Video rule (owner, 2026-10-18): NEW videos only, only the coins we trade
+Never download or process older videos or backfill. Each day take only videos published since the last run (yt-dlp --dateafter or the
+channel's newest uploads), only about the coins we trade (BTC now; add a coin when the firm trades it). Process each video once
+(transcript, frames, claims), then DELETE the video file immediately; keep frames, subtitles, method-card updates and claims.

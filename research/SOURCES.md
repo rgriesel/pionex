@@ -141,6 +141,12 @@ All unsigned and read-only. "Checked" = called or HEAD-requested on 2026-10-14.
   traders.
 - **Benjamin Cowen (Into The Cryptoverse)** - checked as a large channel; cycle, dominance and risk-model views. Good for what
   the retail crowd believes (halving, dominance); the lab's evidence rules say do not trade it.
+- **Owner channel list (added 2026-10-16 by the owner).**
+  - BTC-call channels (forward only, same routine as the first three): Crypto Banter
+    `youtube.com/@CryptoBanterGroup`, Crypto Decoded `youtube.com/@cryptodecodedgroup`.
+  - Idea channels (trading and design ideas, turn into cards only with an exact rule): Lewis Jackson
+    `youtube.com/@LewisJacksonInvesting`, Crypto Decoded `youtube.com/@cryptodecodedgroup`, DaviddTech
+    `youtube.com/@DaviddTech`.
 - Pipe any video through the lab's `youtube-transcriber` skill and extract the rule before judging. The owner's three BTC-call
   channels are already tracked forward in `var/guidance`.
 

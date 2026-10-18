@@ -1,6 +1,6 @@
 # Idea card: tokenised stock / index / gold trend sleeve (CLO-62, plan row 4)
 
-Written 2026-10-18 10:55 SAST by Quant B, before any test. Research only.
+Written 2026-10-18 about 10:50 SAST by Quant B, before any test. Research only.
 
 **Idea.** Pionex lists tokenised US stocks and gold as spot (QQQX, SPYX, TSLAX, NVDAX, PAXG) and perps. Their trends should be
 close to uncorrelated with the ten-coin crypto basket. Add them to CTA v1.1 as extra coins with the rules unchanged

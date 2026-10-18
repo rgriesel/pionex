@@ -1,6 +1,6 @@
 """Q6 (issue CLO-62): tokenised stock / index / gold trend sleeve on CTA basket v1.1 (research only: no order path).
 
-PRE-REGISTERED 2026-10-18 11:05 SAST (machine clock), before the test was run (nothing below changes after a result;
+PRE-REGISTERED 2026-10-18 10:53 SAST (machine clock; commit 7d310ec, the first draft said 11:05 by mistake), before the test was run (nothing below changes after a result;
 a changed idea is a new test). Idea card: research/ideas/2026-10-18-tokenised-trend-sleeve.md. Not previously tested
 (docs/STRATEGY_LOG.md checked; the gold-only sleeve C3 failed at 4x costs and is a different test). Status: PROXY data
 (Yahoo chart API daily bars of the underlying, not the Pionex token); not proof of profit.

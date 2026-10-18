@@ -7,12 +7,15 @@ Run: py -m pionex_lab.research.owner_exit_study --root <repo> --output <json>
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_right
 from collections import Counter
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from statistics import mean
 
 from . import luck, owner_method
 
@@ -32,7 +35,7 @@ def connect(path):
 
 def audit_account(path):
     """All ids remain in denominators, including records without raw details."""
-    with connect(path) as db:
+    with closing(connect(path)) as db:
         observations = db.execute("SELECT bu_order_id, at, raw FROM bots "
                                   "WHERE bu_order_id IS NOT NULL ORDER BY at").fetchall()
     groups = {}
@@ -118,7 +121,7 @@ def market_coverage(root):
         path = root / "var" / name
         if not path.exists():
             continue
-        with connect(path) as db:
+        with closing(connect(path)) as db:
             for sym, count, first, last in db.execute(
                 "SELECT symbol,COUNT(*),MIN(open_time),MAX(open_time) FROM klines "
                 "WHERE interval='60M' AND complete=1 AND symbol IN ('BTC_USDT','BTC_USDT_PERP') "
@@ -127,6 +130,60 @@ def market_coverage(root):
                                "first_open": first, "last_open": last,
                                "source": "Pionex" if name == "market.db" else "Binance PROXY"})
     return result
+
+
+def exit_context(root, audited_rows):
+    """Historical price context only; latest targets explicitly retrospective.
+
+    This is neither target training nor the causal benefit test. Spot/perp
+    symbols are kept separate. No unfinished candle at the owner exit is used.
+    """
+    root = Path(root)
+    cache, results = {}, []
+    for row in audited_rows:
+        oid, end = row["id"], row.get("end")
+        pair = row.get("pair", "")
+        if not end or row.get("direction") not in ("long", "short"):
+            results.append({"id": oid, "status": "no_closed_directional_bot"})
+            continue
+        if pair not in ("BTC.PERP_USDT", "BTC_USDT"):
+            results.append({"id": oid, "status": "unsupported_symbol", "pair": pair})
+            continue
+        perp = pair == "BTC.PERP_USDT"
+        name, sym = ("proxy_market.db", "BTC_USDT_PERP") if perp else ("market.db", "BTC_USDT")
+        key = (name, sym)
+        if key not in cache:
+            with closing(connect(root / "var" / name)) as db:
+                data = db.execute("SELECT open_time,open,high,low,close,volume FROM klines "
+                                  "WHERE symbol=? AND interval='60M' AND complete=1 ORDER BY open_time", (sym,)).fetchall()
+            bars = [owner_method.Bar(int(t), *map(float, values)) for t, *values in data]
+            cache[key] = bars, [b.time for b in bars]
+        bars, times = cache[key]
+        stop = bisect_right(times, end - owner_method.HOUR)
+        history = bars[max(0, stop - 20):stop]
+        if (len(history) < 20 or end - (history[-1].time + owner_method.HOUR) >= owner_method.HOUR
+                or not owner_method.valid_bars(history, end)):
+            results.append({"id": oid, "status": "missing_or_gapped_closed_bars", "source": name, "symbol": sym})
+            continue
+        sign = 1 if row["direction"] == "long" else -1
+        fav = [b.high if sign == 1 else -b.low for b in history]
+        atr = mean(max(history[i].high - history[i].low,
+                       abs(history[i].high - history[i-1].close),
+                       abs(history[i].low - history[i-1].close)) for i in range(6,20))
+        old_volume = mean(b.volume for b in history[-15:-3])
+        latest = row.get("latest_target")
+        results.append({"id": oid, "status": "descriptive_context_available",
+                        "source": "Binance PERP PROXY" if perp else "Pionex spot historical",
+                        "symbol": sym, "last_closed_bar_end": history[-1].time + owner_method.HOUR,
+                        "stall6_in_trailing20": max(fav[-6:]) <= max(fav[:-6]),
+                        "signed_3h_price_change": sign * (history[-1].close-history[-4].close),
+                        "volume3_over_prior12": mean(b.volume for b in history[-3:]) / old_volume if old_volume else None,
+                        "latest_target_distance_atr": sign * (latest-history[-1].close) / atr if latest and atr else None,
+                        "latest_target_is_hindsight": not row.get("target_observed_before_exit", False),
+                        "heatmap_at_exit": "unavailable", "news_as_known_at_exit": "unavailable",
+                        "actual_net_benefit_vs_hold": None})
+    return {"purpose": "Descriptive historical market context; not causal performance evidence",
+            "counts": dict(Counter(r["status"] for r in results)), "rows": results}
 
 
 def study(root):

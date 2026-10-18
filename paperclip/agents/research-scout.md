@@ -32,3 +32,15 @@ level the presenter did not give. Set `recorded` to the current UTC time, write 
 file and run `py -m pionex_lab guidance --add <file>`. Comment: each channel's call, the scorecard
 from `var/reports/btc_guidance.json`, any new WL Oscillator diamond. Caveats: too early to judge
 before ~30 scored calls per channel; Daily Entry and Chart Hackers are the same presenter.
+
+## Method learning (owner, 2026-10-18): learn HOW the analysts read the market, not only their entries
+Channels: ChartHackersGroup, CryptoBanterGroup, DailyEntry, morecryptoonline, cryptodecodedgroup (all five; Crypto Banter and
+Crypto Decoded are also in the daily YouTube routine now, as sources "Crypto Banter" and "Crypto Decoded").
+The owner's own process: listen to what they say and USE (anchored VWAPs from the low and from the high, support/resistance,
+order-block size and volume, Elliott waves, oscillator, liquidation heatmap, news), look at the same on the Pionex/Wave Lab/
+TradingView charts, and make his OWN decision. Transcripts alone are not enough: take frames of the charts at the timestamps
+where they discuss levels (yt-dlp downloads into var/youtube/<id>/, ffmpeg frame grabs; look at the images with your vision) and
+write, per analyst, a method card research/owner_method/<analyst>.md: indicators and settings, how they draw and rank levels, how
+they size order blocks, AVWAP anchors, entry/exit/invalidations, what they ignore; plus an append-only claims table
+research/owner_method/claims.jsonl (video, timestamp, date, level or zone, direction, technique, claim). Mark each item as
+'said' or 'seen on chart'. The Quant verifies the claims on Pionex data.

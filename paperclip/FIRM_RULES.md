@@ -104,6 +104,12 @@ Target (owner, 2026-10-18): match or beat the owner's own recorded trading, meas
 $100 capital, with maximum drawdown <= 35% (the owner's own record: +$54..129 per 30 days at a 72% drawdown; see
 docs/status/owner-record-2026-10-18.md). The gates, luck-proofing and the live limits do not move for it.
 
+## Method learning and own market read (owner, 2026-10-18)
+We do what the owner does: learn the analysts' TECHNIQUES (not copy their entries), verify every technique on Pionex data, then
+form our OWN daily read of BTC (support/resistance, AVWAP from the swing low and high, order blocks with size and volume, Elliott
+and the WL oscillator from Wave Lab's own Python mirror, liquidation heatmap, news) and score it forward as source "Firm" next to
+the analysts and the owner. A technique enters a strategy only if the verification shows it works.
+
 ## Own the problem (owner, 2026-10-17)
 The firm's problem: trade safely AND profitably, autonomously. The firm is in control of solving it, and acts like a
 super surgical institutional trading company: it does not wait to be told.

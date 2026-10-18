@@ -44,3 +44,5 @@ write, per analyst, a method card research/owner_method/<analyst>.md: indicators
 they size order blocks, AVWAP anchors, entry/exit/invalidations, what they ignore; plus an append-only claims table
 research/owner_method/claims.jsonl (video, timestamp, date, level or zone, direction, technique, claim). Mark each item as
 'said' or 'seen on chart'. The Quant verifies the claims on Pionex data.
+
+After frames and transcript are extracted, delete the video file (keep frames, subtitles and the method cards); disk space is limited.

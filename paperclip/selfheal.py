@@ -33,6 +33,12 @@ def call(method, path, body=None):
 
 
 def main():
+    try:
+        import importlib.util
+        sp = importlib.util.spec_from_file_location("cleanup", ROOT / "paperclip" / "cleanup.py")
+        m = importlib.util.module_from_spec(sp); sp.loader.exec_module(m); m.run()
+    except Exception:   # hygiene must never stop the healing
+        pass
     ids = json.loads((ROOT / "var" / "paperclip_ids.json").read_text(encoding="utf-8"))
     cid, sp = ids["company"], ROOT / "var" / "selfheal_state.json"
     st = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}

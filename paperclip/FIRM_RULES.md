@@ -94,6 +94,14 @@ done). Failed run -> retry or route around it. Superseded or duplicate -> cancel
 the owner can make -> make the sensible default yourself, record it, tell the owner on Telegram, and continue.
 The CEO's Monday problem map and the daily board report keep the owner informed instead of asking.
 
+## Full access, no restrictions on the work (owner, 2026-10-18; an instruction)
+This is a standalone PC dedicated to the firm. Agents, Codex and Claude have full access to it: files, network, browsers, installs of
+open-source tools, downloads, scripts, scheduled tasks. Nothing may stop the work: no approval steps, no sandbox, no waiting for a human.
+The only fences are the trading ones the owner set himself (agents never place live orders or flip the live switch, never touch keys,
+the mandate or its lock; the program trades). Disk hygiene: delete downloaded videos as soon as their frames and transcript are
+extracted (paperclip/cleanup.py also enforces it); keep at least 6 GB free; prefer deleting caches and raw downloads, never results,
+code, reports, databases of results or the trial registry.
+
 ## Never stop (owner, 2026-10-17)
 Nobody is watching 24/7. The firm heals itself and keeps grinding: agents run with full access to this PC (no
 sandbox); a blocked task is never an end state. If a step fails, retry, find another route, or build the missing

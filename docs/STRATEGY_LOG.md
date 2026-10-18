@@ -74,3 +74,10 @@ Read by `pionex_lab/live/gate.py`. One row per Red Team verdict: `| strategy_id 
 | Date | Test | Result | Verdict |
 |---|---|---|---|
 | 2026-10-18 | Card 4: 7 independently drifting weekday sub-books vs CTA v1.1; frozen protocol `research/staggered_clo57_prereg.md`, timestamp 09:09:41 UTC; run once; Binance daily PROXY 2017-12 to 2026-10 | Fractional capital: Sharpe 1.279 vs 1.369 (difference -0.089 within 0.10); CAGR 33.0% vs 35.8%; DD 31.0% vs 26.3%; turnover 6.27x vs 15.65x/year. 4x costs Sharpe 1.219 vs 1.219 (difference +0.00055). Weekday Sharpe range 1.113-1.373, SD 0.0848. Bootstrap daily-return difference -0.566 bps, 95% interval [-1.574,+0.486]. Registry 247 -> 257; DSR 0.829 < 0.96. $100 split: no buys at $10 minimum; $1000 split Sharpe 1.025. No untouched OOS; no live eligibility. `var/reports/staggered_clo57.json`, `docs/status/clo-57-2026-10-18.md` | **PASS (robustness tolerance only)**; keep v1.1 unchanged; CEO execution-policy setup + independent Red Team review pending |
+
+
+## CLO-64 owner-method market-read exits (2026-10-18)
+
+| Date | Test | Result | Verdict |
+|---|---|---|---|
+| 2026-10-18 | Owner method + six market-read exits frozen in `research/owner_method.py` before evaluation (4605aad); read-only bot/source audit and fee-reconciled paired-replay engine | 52/65 expected bots present; 50 finished: 33 manual-before-latest-target, 14 manual target unknown, 2 profit-stop, 1 liquidation. Zero target snapshots before entry or exit. Historical closed-bar context for 34/50 finished bots. Actual after-fee benefit/ruin unavailable. Five configurations reserved in trial registry (260 -> 265); all nine CLO-44 checks NOT_EVALUABLE, pass=false. `docs/status/clo-64-market-read-exits-2026-10-18.md` | **INCOMPLETE INPUTS / NOT LIVE ELIGIBLE**; backlog dependencies CLO-65, complete 65-bot target/fill/fee history, causal analyst inputs and forward Pionex ledger. No performance PASS or profit claim. |

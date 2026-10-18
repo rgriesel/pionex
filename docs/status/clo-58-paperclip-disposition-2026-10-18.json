@@ -1,0 +1,27 @@
+{
+  "issue": "CLO-58",
+  "requested_status": "todo",
+  "reason": "API read failed after initial attempt plus three retries; research completed FAIL, pending delivery",
+  "attempts": [
+    {
+      "attempt": 1,
+      "error": "timed out",
+      "ok": false
+    },
+    {
+      "attempt": 2,
+      "error": "timed out",
+      "ok": false
+    },
+    {
+      "attempt": 3,
+      "error": "timed out",
+      "ok": false
+    },
+    {
+      "attempt": 4,
+      "error": "timed out",
+      "ok": false
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "issue": "CLO-58",
+  "verdict": "FAIL",
+  "checks": {
+    "annual_saving_ge_half_point": false,
+    "fill_rate_ge_60pct": true,
+    "non_btc_eth_positive": false,
+    "4x_positive": false,
+    "corrected_bootstrap_positive": false
+  },
+  "created_at": "2026-10-18T09:18:23.747843+00:00",
+  "venue": "Binance PROXY, not Pionex execution",
+  "start": "2023-04-01",
+  "end_inclusive": "2026-10-11",
+  "days": 1290,
+  "orders": 493,
+  "fill_rate_count": 0.6795131845841785,
+  "fill_rate_weight": 0.6772430019261035,
+  "chased_orders": 158,
+  "missed_rallies_gt3pct": 31,
+  "results": {
+    "1": {
+      "annual_saving": -0.03670093733674399,
+      "non_btc_eth_saving_sum": -0.10210783809305138,
+      "chase_saving_sum": -0.1411972361646778,
+      "year_saving_sum": {
+        "2023": -0.03163920200619545,
+        "2024": -0.043859528643654826,
+        "2025": -0.024745927329911956,
+        "2026": -0.02937672234713645
+      },
+      "bootstrap": {
+        "lower": -0.06529646888738289,
+        "alpha": 0.0001923076923076923,
+        "draws": 20000,
+        "block_days": 30,
+        "seed": 20261018
+      }
+    },
+    "2": {
+      "annual_saving": -0.034735021856844045,
+      "non_btc_eth_saving_sum": -0.09636400836203256,
+      "chase_saving_sum": -0.14131382457680147,
+      "year_saving_sum": {
+        "2023": -0.030051851593326944,
+        "2024": -0.04177445767342497,
+        "2025": -0.02335005480926939,
+        "2026": -0.02750174186601516
+      }
+    },
+    "4": {
+      "annual_saving": -0.030803190897046768,
+      "non_btc_eth_saving_sum": -0.08487634890000186,
+      "chase_saving_sum": -0.14154700140104834,
+      "year_saving_sum": {
+        "2023": -0.02687715076759208,
+        "2024": -0.037604315732967346,
+        "2025": -0.020558309767986553,
+        "2026": -0.023751780903775246
+      }
+    }
+  },
+  "errors": [],
+  "n_trials_before": 257,
+  "n_trials_for_correction": 260,
+  "spread_bps": {
+    "BTC_USDT": 0.0012202033206199915,
+    "ETH_USDT": 0.0413239362692483,
+    "SOL_USDT": 0.9637160892392334,
+    "XRP_USDT": 0.7707426105051368,
+    "DOGE_USDT": 2.5223861773227703,
+    "LINK_USDT": 8.336807002917704,
+    "ADA_USDT": 4.552697473253664,
+    "BNB_USDT": 0.69292866299509,
+    "AVAX_USDT": 10.167768174885396,
+    "LTC_USDT": 1.6890465332316544
+  },
+  "ticks": {
+    "BTC_USDT": 0.01,
+    "ETH_USDT": 0.01,
+    "SOL_USDT": 0.01,
+    "XRP_USDT": 0.0001,
+    "DOGE_USDT": 1e-05,
+    "LINK_USDT": 0.01,
+    "ADA_USDT": 0.0001,
+    "BNB_USDT": 0.01,
+    "AVAX_USDT": 0.01,
+    "LTC_USDT": 0.01
+  },
+  "baseline_trace_regression": "exact equality",
+  "fee_source": "https://www.pionex.com/en/fees",
+  "input_hashes": {
+    "C:\\Users\\Desj Griesel\\pionex\\var\\reports\\clo58-symbols-2026-10-18.json": "79596011ba1aeb53e04ad662406978f82ff8fa7e815261f7254fff292ab79d8f",
+    "C:\\Users\\Desj Griesel\\pionex\\var\\reports\\clo58-book-2026-10-18.json": "ae326980e80bc8b8fa317b08983d343eff71a5450bac3941328f65629ad368e2"
+  },
+  "code_sha256": "d25c60750c66c249f51ae7e57a395891bd8bd75a8b2231e856c8b45c3d9ea855",
+  "independent_saved_record_reconciliation": "passed"
+}

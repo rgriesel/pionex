@@ -1,0 +1,24 @@
+{
+  "full_suite": {
+    "tests": 464,
+    "passed": 463,
+    "errors": 1,
+    "duration_seconds": 1687.958,
+    "known_error": "test_read_only_uri_encodes_awkward_paths: Windows rejects ? in directory name"
+  },
+  "focused_suite": {
+    "tests": 5,
+    "passed": 5
+  },
+  "skill_script_suite": {
+    "tests": 12,
+    "passed": 12
+  },
+  "research_runs": 1,
+  "verdict": "PASS robustness tolerance only",
+  "merge_commit": "684a527",
+  "paperclip_status": "unconfirmed after 4 write attempts and 4 fallback todo attempts, 4 verification attempts",
+  "dependency": "CEO execution policy for CLO-57 with Red Team reviewer maxReviewRounds=2, independent review",
+  "telegram_infrastructure_notice": "sent",
+  "telegram_research_notice": "skipped daily cap"
+}

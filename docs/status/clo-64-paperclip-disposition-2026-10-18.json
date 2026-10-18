@@ -1,0 +1,65 @@
+{
+  "issue": "CLO-64",
+  "at": "2026-10-18T10:19:17.923021+00:00",
+  "attempts": [
+    {
+      "operation": "POST /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f/comments",
+      "attempt": 1,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "POST /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f/comments",
+      "attempt": 2,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "POST /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f/comments",
+      "attempt": 3,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "POST /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f/comments",
+      "attempt": 4,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "PATCH /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f",
+      "attempt": 1,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "PATCH /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f",
+      "attempt": 2,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "PATCH /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f",
+      "attempt": 3,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    },
+    {
+      "operation": "PATCH /issues/7b48d07a-0afd-4783-8bed-7fc7aa55f83f",
+      "attempt": 4,
+      "ok": false,
+      "error_type": "TimeoutError",
+      "http_code": null
+    }
+  ],
+  "fallback_required": "todo",
+  "confirmed_status": null,
+  "fallback_status_confirmed": false
+}

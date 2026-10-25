@@ -2,6 +2,7 @@
 
 | Date | Idea | Data | Hold | Result | Verdict |
 |---|---|---|---|---|---|
+| 2026-10-25 | CLO-129 support-anchored family v1; frozen 18:54 SAST in `research/support_grid.py`; separate from original band cohort | Synthetic OHLC fixtures only; no market performance evaluated | Planned 7-day cohorts | 6 planned configurations: BTC/ETH x spot 1x, long perp 2x/3x; prior 168-hour low anchors bottom, 16% full range, 40 rows, stop 3% below support. Wick/close break hours and episodes counted with complete closed-hour coverage. Zero forward starts or performance trials; no liquidation value assumed. `var/reports/grid_tournament_support_clo129.json`; `research/ideas/clo129-support-grid-v1.md`. CLO-128/CLO-37, absolute-range supervisor and confirmed gates pending. | INSUFFICIENT |
 | 2026-10-25 | CLO-129 shadow-grid tournament preparation; policy frozen 18:37 SAST in `research/grid_tournament.py` | Synthetic unit-test ledgers only; no market performance evaluated | Planned 7-day cohorts | 18 planned spot configurations; 0 forward starts, 0 performance trials, no CAGR/DD/Sharpe claim. Offline scorer/proposals only. `var/reports/grid_tournament_clo129.json`; `docs/status/clo-129-tournament-preparation-2026-10-25.md`. Dependencies CLO-128 exact owner copies and CLO-37 futures-grid ledger; full forward protocol/gates and supervisor integration pending. | INSUFFICIENT |
 
 One row per test. Net results are after Pionex-level costs (≈0.05% fee + slippage per side) unless

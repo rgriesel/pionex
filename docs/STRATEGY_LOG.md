@@ -1,5 +1,9 @@
 # Strategy log — every idea the lab has tested
 
+| Date | Idea | Data | Hold | Result | Verdict |
+|---|---|---|---|---|---|
+| 2026-10-25 | CLO-129 shadow-grid tournament preparation; policy frozen 18:37 SAST in `research/grid_tournament.py` | Synthetic unit-test ledgers only; no market performance evaluated | Planned 7-day cohorts | 18 planned spot configurations; 0 forward starts, 0 performance trials, no CAGR/DD/Sharpe claim. Offline scorer/proposals only. `var/reports/grid_tournament_clo129.json`; `docs/status/clo-129-tournament-preparation-2026-10-25.md`. Dependencies CLO-128 exact owner copies and CLO-37 futures-grid ledger; full forward protocol/gates and supervisor integration pending. | INSUFFICIENT |
+
 One row per test. Net results are after Pionex-level costs (≈0.05% fee + slippage per side) unless
 noted; all data is labelled proxy (Binance public archives) unless noted. Backtests are not proof of
 future profit. Newest first. The quant-backtester appends here; the research-scout reads it to avoid

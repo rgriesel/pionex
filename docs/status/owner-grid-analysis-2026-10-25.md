@@ -51,3 +51,19 @@ on the against group because grids do not hold a full position and bots were clo
 1. Deposit/withdrawal dates and amounts (to reconcile the +145 wallet change with +232 realized).
 2. Were the 5 top-up bots topped up on purpose (adding margin to winners)?
 3. Why does the 123 USDT 15x short record show zero invested? (transfer, or a failed start?)
+
+## Addendum (2026-10-25, board comments on CLO-127/128): range and liquidation vs daily S/R and confluence
+Script `pionex_lab/research/owner_grid_levels.py` (rules pre-written in its docstring), report `var/reports/owner_grid_levels_2026-10-25.json`.
+Levels are point-in-time daily BTC levels (SR clusters of >=3 pivots, anchored VWAP from last swing high/low, EMA50/200, fib 0.5/0.618);
+confluence = >=2 distinct level types within 0.5 ATR(14). Descriptive only; one pair, overlapping bots.
+
+| Group (entry-side range edge) | n | win rate | median pnl | sum pnl |
+|---|---|---|---|---|
+| At confluence | 5 | 60% | +0.26 | -4.3 |
+| Not at confluence | 51 | 86% | +2.87 | +236.1 |
+Permutation p = 0.021 (descriptive; n=5 is too small to conclude anything).
+
+- Only 5 of 56 bots had their entry edge at a confluence, all long bots, and they did worse. The bot edges were rarely on a level at all (18 of 56 bottoms touched no level type; 55 of 56 tops touched none).
+- Both-edges-at-confluence: 0 bots. So the owner's bot ranges do not look like they were placed at our coded confluence levels.
+- Liquidation: an estimated liquidation price was recorded for only 15 of 56 bots, and for all of them it sat at or just inside the range edge (-0.8 to -1.2 ATR, i.e. not beyond it). "Liquidation below the nearest support" could be tested on 8 bots and held for 0 of them. That claim is therefore not supported by this data; the stored estimate may also be a snapshot after the fact, not the owner's set stop.
+- Caveat: our SR/AVWAP code is our own reading of the owner's method; his actual SRchannel settings and manual levels are unknown, so a non-match is not proof he does not use levels. Ask him for the levels he used on a few bots.

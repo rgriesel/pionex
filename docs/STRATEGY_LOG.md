@@ -55,6 +55,12 @@ repeats.
 | 2026-10-01…12 | Lab research cycles (spot, long-only, ≤4h): volatility breakout, trend pullback, range reversion, relative strength, capitulation, Bollinger snapback, US-open breakout, funding settlement bounce, Elliott ABC continuation (5m/1h), OI flush reversal, OI confirmed breakout, crowded-short squeeze, funding extreme, session drift, deep pullback | 5m / 1h | all ≈ 0 gross vs ~0.16% cost; best Elliott 5m gross +0.12%/trade | REJECTED (lab registry var/research.db) |
 | 2026-10-17 | Owner's finished grid bots mined (CLO-46): 41 finished BTC bots, 5 weeks; R1 spot grid gated by vol ratio >= 1, R2 futures grid 5x direction by 7d trend (liquidation modelled) | BTC 1h Binance PROXY 2023-01→2026-10, 97 x 14d windows | 14d | R1 mean -0.23%/window (perm p 0.25); R2 mean -5.1%/window (perm p 0.25); owner bots: 90% of profit float, no feature survives 22 looks | FAIL (both rules); `var/reports/owner_bots_2026-10-17.json`, `owner_rules_2026-10-17.json` |
 
+## CLO-237 owner-inspired 40x short-hold long grid (2026-11-07)
+
+| Date | Idea | Data | Hold | Result | Verdict |
+|---|---|---|---|---|---|
+| 2026-11-07 | CLO-237: prior168h+EMA50 long gate, 60 arithmetic rows +/-6.67%, 40x, max$50 margin, early net-profit/stop/time exits; four frozen configurations; owner true net +$283.72/30d across 58 bots (capped history, includes shorts/larger stakes) | Pionex BTC_USDT_PERP public 60M, 10,000 bars, 411 evaluated days; no proxy | <=8h planned, next-open exits | $100->$30.72; CAGR -64.97%, DD71.35%, Sharpe-1.26; 52 bots, 63.5% wins, 1 liquidation; mean rolling30 -6.58%, target-hit0%; DSR7.74e-10, PBO75.36%; trade LB-12.80%; report `var/reports/owner_grid_clo237.json` | **FAIL**. WHY adverse inventory/liquidation and $77.88 costs overwhelm small cycles; 328 minimum-size rejections strand capital, only411/750 days, timing/mark/forward gaps. WHAT lower notional, wider spacing and causal shorts must beat unchanged gates. NEXT separate pre-registered CLO-237-v2: 5x, 10 rows, both directions, max$50 margin, TP$1/stop25%/hold8h; NOT RUN; `research/owner_method/clo237_v2_prereg.md`. |
+
 ## Being tracked forward (no backtest verdict possible)
 
 | Since | What | Where |

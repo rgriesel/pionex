@@ -92,3 +92,10 @@ Read by `pionex_lab/live/gate.py`. One row per Red Team verdict: `| strategy_id 
 | Date | Test | Result | Verdict |
 |---|---|---|---|
 | 2026-10-18 | Owner method + six market-read exits frozen in `research/owner_method.py` before evaluation (4605aad); read-only bot/source audit and fee-reconciled paired-replay engine | 52/65 expected bots present; 50 finished: 33 manual-before-latest-target, 14 manual target unknown, 2 profit-stop, 1 liquidation. Zero target snapshots before entry or exit. Historical closed-bar context for 34/50 finished bots. Actual after-fee benefit/ruin unavailable. Five configurations reserved in trial registry (260 -> 265); all nine CLO-44 checks NOT_EVALUABLE, pass=false. `docs/status/clo-64-market-read-exits-2026-10-18.md` | **INCOMPLETE INPUTS / NOT LIVE ELIGIBLE**; backlog dependencies CLO-65, complete 65-bot target/fill/fee history, causal analyst inputs and forward Pionex ledger. No performance PASS or profit claim. |
+
+
+## CLO-243 LIVE CANARY engineering validation (2026-11-07)
+
+| Date | Idea | Data | Hold | Result | Verdict |
+|---|---|---|---|---|---|
+| 2026-11-07 | Separate LIVE CANARY screen and fixed $5/$10 scale/retire policy, pre-registered 11:44 SAST in live/canary.py:qualify | Synthetic unit fixtures only; no strategy replay and no real-money P&L | n/a | Full suite 543 run: 541 pass, 1 skip, 1 documented Windows filename error; lab-skill suite 12/12 pass. 15 new tests: net costs, causal evidence, review pin/revocation, brackets/leverage, freshness, lifetime scale/retire, margin and loss halts; adapter absent => ineligible | PASS (engineering fixtures only; independent CLO-241 review pending). Dependencies: CLO-238 fresh-Pionex adapter and enforcement, CLO-239 setup adapter, CLO-237 reviewed evidence, CLO-242 applicable leverage. No strategy qualified; report var/reports/clo243_validation_2026-11-07.json |

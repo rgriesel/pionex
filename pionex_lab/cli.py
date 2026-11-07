@@ -480,6 +480,18 @@ def cmd_shadow_grid(args, paths, cfg, mandate):
     return shadow_grid.run(paths, _stop_event(), once=args.once)
 
 
+def cmd_regime_watch(args, paths, cfg, mandate):
+    """Regime watch every 5 min on live Pionex data + hourly strategy-health pass (CLO-45; stop-only, no orders)."""
+    from .live import regime
+    paths.ensure()
+    _setup_logging(paths, "regime", args.verbose)
+    try:
+        dd = float(mandate.get("risk", "peak_drawdown_fraction"))
+    except Exception:
+        dd = 0.30
+    return regime.run(paths, _stop_event(), once=args.once, dd_limit=dd)
+
+
 def cmd_waves(args, paths, cfg, mandate):
     """Wave Lab: local Elliott Wave charts, scanner, watchlists and alerts (read-only)."""
     from .waves.feeds import pick_feed
@@ -814,6 +826,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("forward-shadow", help="CTA v1.1 books + Donchian C1 forward on live Pionex quotes (paper, public data)")
     p.add_argument("--once", action="store_true")
     p.add_argument("--report", action="store_true", help="print the daily lines instead of running")
+    p = sub.add_parser("regime-watch", help="regime watch (5 min, live Pionex data) + hourly strategy-health stop-only pass")
+    p.add_argument("--once", action="store_true")
     p = sub.add_parser("waves", help="Wave Lab: local Elliott Wave charting, scanner, watchlists, alerts")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8770)
@@ -841,6 +855,8 @@ def main(argv=None) -> int:
         mandate = load_mandate(DEFAULT_CONFIG_DIR)
     except PolicyError as exc:
         print(f"POLICY ERROR: {exc}", file=sys.stderr)
-        return 4
+        if args.cmd != "regime-watch":          # the stop-only monitor must keep watching while the owner edits the mandate
+            return 4
+        mandate = None
     handler = globals()["cmd_" + args.cmd.replace("-", "_")]
     return handler(args, paths, cfg, mandate)

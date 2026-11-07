@@ -49,7 +49,7 @@ from pathlib import Path
 
 from ..exchange.account import AccountReadError, load_credentials, sign
 from ..mandate import DEFAULT_CONFIG_DIR, PolicyError, load_mandate
-from . import gate
+from . import gate, health
 
 BASE_URL = "https://api.pionex.com"
 LIVE_CAP_USDT = Decimal(100)           # owner policy: never more than 100 USDT of the account
@@ -340,6 +340,8 @@ class Executor:
         L = self.limits(m)
         pinned = pinned or {}
         if a.kind != "grid_cancel":
+            if health.is_stopped(self.var, a.strategy_id):             # CLO-45: monitor stop marker (risk-reducing cancels exempt)
+                raise Refused(f"strategy {a.strategy_id} is stopped by the health monitor (var/LIVE_STOP_{a.strategy_id})")
             if a.strategy_id not in eligible:
                 raise Refused(f"strategy {a.strategy_id} is not ELIGIBLE per the proof gate")
             if eligible[a.strategy_id] != ("grid" if a.kind == "grid_create" else "book"):
@@ -614,6 +616,8 @@ def run_daily_dry(paths, log_path) -> dict:
         except PolicyError as exc:
             return {"error": str(exc)}
     results = gate.evaluate_all(ex.var, ex.log_path, mand, ts)
+    if gate.requalify(ex.var, results, ts):                       # a PAUSED strategy that re-passed the gate returns
+        results = gate.evaluate_all(ex.var, ex.log_path, mand, ts)
     planned = [{"action": a.kind, "strategy": a.strategy_id, "result": ex.execute(a)}
                for a in plan_grid_creates(ex, results, mand)] if m else []
     rep = {"at_ms": ts, "mode": "DRYRUN", "live_blocked_by": reasons, "eligible": sorted(gate.eligible_ids(results)),

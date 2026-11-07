@@ -1,0 +1,15 @@
+{
+ "checked": 799,
+ "matched": 799,
+ "mismatched": 0,
+ "kline_unavailable": 0,
+ "checked_against": {
+  "5M": 190,
+  "1M": 609
+ },
+ "verdict": "PASS",
+ "rule": "fill price inside [low, high] of the Pionex public kline of the fill minute (strict); 5M bar only where the 1m bar has expired (Pionex keeps ~7 days of 1m)",
+ "mismatches": [],
+ "unavailable": [],
+ "generated_utc": "2026-10-26 18:37:17"
+}

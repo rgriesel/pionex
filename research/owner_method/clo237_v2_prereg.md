@@ -1,5 +1,11 @@
 # CLO-237-v2 — new test, pre-registered 2026-11-07 11:53:16 SAST
 
+**Superseded by owner direction 2026-11-07 21:22 UTC. NOT RUN.** Retained for
+audit only. Do not implement or evaluate under CLO-237: the owner requested a
+benchmark and risk lessons, then the independent own-edge programme. See
+`docs/status/clo-237-benchmark-closeout-2026-11-07.md`. Original rules follow
+unchanged; no new trial was reserved by this closeout.
+
 **NOT RUN.** This is a separate trial after CLO-237's FAIL, not a replacement
 result or a re-judgment. No historical returns were computed for this rule.
 

@@ -1,5 +1,16 @@
 # Strategy log — every idea the lab has tested
 
+Owner update (CLO-237, 2026-11-07 21:22 UTC): the completed FAIL below stands;
+its proposed owner-derived CLO-237-v2 / CLO-244 NEXT is superseded and unrun.
+Use the owner record only as a benchmark and for risk lessons; next research
+belongs to the independent own-edge programme. No additional test or trial.
+Benchmark: +283.72 USDT net, 56.57 fees, 58 bots; fixed-$100 return and marked
+trading drawdown are not established. The older 72.2% figure is unadjusted
+wallet drawdown, affected by transfers. WHY adverse inventory/liquidation and
+costs killed the model; WHAT independent after-cost signal evidence under
+unchanged gates; NEXT separately pre-register an own-edge hypothesis, not an
+owner copy. See `docs/status/clo-237-benchmark-closeout-2026-11-07.md`.
+
 | Date | Idea | Data | Hold | Result | Verdict |
 |---|---|---|---|---|---|
 | 2026-10-25 | CLO-129 confluence/random-level family v1; frozen 19:02 SAST in `research/confluence_grid.py` | Synthetic causal level evidence only; indicator pipeline and market performance not evaluated | Planned 7-day cohorts | 32 planned paired configurations: BTC/ETH x 4H/1D x long/short x fade/grid x confluence/random, 1x isolated PERP. Distinct-type 0.5 ATR clustering, AVWAP-anchored entries, nearest opposite target, 1 ATR stop; deterministic translated controls. 0 forward starts or performance trials. `var/reports/grid_tournament_confluence_clo129.json`; `research/ideas/clo129-confluence-grid-v1.md`. No Elliott; causal indicator pipeline, CLO-37 ledger, owner copies, supervisor and confirmed evaluation gates pending. | INSUFFICIENT |

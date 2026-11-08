@@ -123,3 +123,10 @@ Specs frozen in `pionex_lab/research/own_edge_clo247.py` at 23:31:28 SAST; gates
 | 2026-11-07 | H3 delayed capitulation confirmation; BTC/ETH completed 4h OHLCV, PROXY screen / prospective Pionex; new trial 171 | 24h, same hard stop/TP and $10 notional | NOT RUN; no return calculation | **PREREGISTERED, pending confirmed gates**. Distinct from 64 prior capitulation-reversal rows: requires next-bar green close above shock-bar high after >=8% 24h drop and >=2x prior-20-bar volume. Historical archive has been reused by the firm and is not untouched OOS. |
 
 | 2026-11-08 | CLO-261 existing H3 trial 171; data-only BTC/ETH spot hourly PROXY snapshot [2023-01-01,2026-10-01), base volume | 24h; emergency stop/TP unchanged | NOT RUN; zero signal/return evaluations or new trials | PREREGISTERED NOT RUN. Both symbols missing 2023-03-24 13:00 UTC; no bridging. Pending CLO-247 CEO/board gate confirmation plus authentic full-interval continuity/lineage and proxy tracking. See docs/status/clo-261-h3-preparation-2026-11-08.md. No strategy verdict or variant registered. |
+
+
+## CLO-258 H5b preparation (2026-11-08; no evaluation)
+
+| Date | Idea / data | Hold | Result | State |
+|---|---|---|---|---|
+| 2026-11-08 | H5b confirmed failed-compression breakout fade; existing trial 172; synthetic OHLC fixtures only, planned BTC/ETH Binance PROXY unchanged | Fixed 96h maximum | 19 synthetic checks cover causal confirmation, 1x fills, long/short stop gaps, TP, missing data, funding and 2x/3x/4x friction; no historical returns calculated | PREPARATION ONLY / NOT RUN; inherited screen-gate confirmation and explicit evaluation authorization remain dependencies. Details: docs/status/clo-258-synthetic-readiness-2026-11-08.md; readiness JSON var/reports/clo258_synthetic_readiness_2026-11-08.json. Eventual PASS requires separate Red Team review, maxReviewRounds 2 |

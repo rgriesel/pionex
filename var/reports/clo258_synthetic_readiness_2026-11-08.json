@@ -1,0 +1,68 @@
+{
+  "issue": "CLO-258",
+  "trial_id": 172,
+  "state": "SYNTHETIC_CHECKS_PASSED",
+  "evaluation_state": "NOT_RUN",
+  "at_sast": "2026-11-08T04:02:02.945015+02:00",
+  "authority": "CEO 2026-11-08 preparation only; inherited gate confirmation unresolved",
+  "new_trials": 0,
+  "historical_return_evaluations": 0,
+  "evaluation_sentinel_created": false,
+  "data": "Synthetic OHLC fixtures only; planned BTC/ETH Binance PROXY remains frozen",
+  "label": "adaptive successor screening; never untouched OOS",
+  "registered_spec_sha256": "9ff7dee18ee8a3790beea369f37954b7d8c67a1bf3825024370f49feeb261d9e",
+  "spec_git_lf_sha256": "ce60ad444cd7f7b47f18ce2f90ab8561a0e7574fe884ba928fabaedfc4f21b72",
+  "newline_note": "Original registered CRLF bytes preserved at root; Git copy differs only by newline encoding",
+  "parent_source_commit": "1620a18c4fadb6ef8581f2de15530a4f1cce5dcd",
+  "code_sha256": "100df42dbbf1b6f96a1b24a100c8484e24c27c1e6a61a14b5b5146f57b55f5e1",
+  "tests_sha256": "d2b44d500b3b2496b635853bd6c28f66be73a29e552b87ccfebcac1fcb7902d6",
+  "synthetic_checks": {
+    "run": 19,
+    "passed": 19
+  },
+  "full_suite": {
+    "command": "py -m unittest discover -s tests",
+    "run": 596,
+    "passed": 594,
+    "skipped": 1,
+    "errors": 1,
+    "seconds": 149.394,
+    "known_error": "test_foundation.Portability.test_read_only_uri_encodes_awkward_paths: WinError 123 on Windows-illegal ? filename"
+  },
+  "lab_skill_suite": {
+    "command": "py -m unittest discover -s .claude/skills/pionex-trading-lab/scripts -p test_*.py",
+    "run": 12,
+    "passed": 12
+  },
+  "trial_snapshot": {
+    "id": 172,
+    "ts": 1794102357196,
+    "source": "clo256_prereg",
+    "ref": "CLO-256:H5b:v1",
+    "strategy_id": "clo256_h5b_v1",
+    "params": "{\"spec_path\": \"research/registrations/clo256_h5b_v1.md\", \"sha256\": \"9ff7dee18ee8a3790beea369f37954b7d8c67a1bf3825024370f49feeb261d9e\", \"registered_sast\": \"2026-11-08T03:45:19+02:00\", \"issue_id\": \"41d996af-4dab-44ba-a232-187f0bdef3b0\", \"issue\": \"CLO-258\", \"budget\": 1, \"gate_status\": \"PENDING_CONFIRMATION\", \"evaluation_state\": \"NOT_RUN\"}",
+    "data_span": "2019-01..2026-10-12 23:00 UTC hourly Binance PROXY; historical eras previously exposed",
+    "result": "PREREGISTERED NOT RUN; dependency: implementation, evidence and gate confirmation",
+    "weight": 1
+  },
+  "ready_scope": "pure simulator with causal failure confirmation, 1x fills, gap/missing data checks, adverse short funding and stress arithmetic",
+  "exact_unresolved_decision": "Board confirmation of unchanged inherited screen gates AND explicit authorization for one adaptive historical evaluation of existing trial 172",
+  "screen_gates": [
+    "full and final trades >=100 else INSUFFICIENT",
+    "full and final net mean >0",
+    "final PF >=1.2",
+    "final 2x execution-cost mean >0",
+    "final mean excluding best trade >0",
+    "final one-sided 95% three-day bootstrap lower bound >0"
+  ],
+  "extra_reports": "0.05/max(295,current SUM(weight)) Bonferroni bound and 3x/4x stresses; no weakened gates",
+  "deferred_work": [
+    "create-only evaluation harness and frozen input row fingerprints",
+    "existing-trial accounting, no duplicate reservation",
+    "paired same-signal continuation diagnostic and final performance reporting"
+  ],
+  "review": "Any eventual PASS stays open for separate CEO-assigned independent Red Team, maxReviewRounds 2",
+  "failure_protocol": "Any eventual FAIL/INSUFFICIENT must explain WHY, WHAT changes, NEXT separately registered queued variant",
+  "readiness_doc": "docs/status/clo-258-synthetic-readiness-2026-11-08.md",
+  "publication": "Recorded separately in issue closeout after commit and merge; no push claim in this pre-commit artifact"
+}

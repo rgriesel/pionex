@@ -1,0 +1,128 @@
+{
+  "issue": "CLO-259",
+  "state": "INPUT_FINGERPRINTS_ONLY_NOT_RUN",
+  "at_sast": "2026-11-10T03:55:01.282441+02:00",
+  "trial_id": 173,
+  "spec_sha256": "bef1e6277584f4a7985760cbeb30a6213b6631cf5df282248af470197c13f873",
+  "data": "Binance spot hourly PROXY; adaptive exposed historical archive",
+  "cutoff": 1791846000000,
+  "symbols": {
+    "BTC_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "7f8c8f6b8998c758fce15a5de865d4409c228dbaab103eda4c25ab696dbb2a12",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/proxy_market.db"
+      ]
+    },
+    "ETH_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "5a249884135364f3fa705507536b000172ad1a3a5920a6923344eefb32fa5ddf",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/proxy_market.db"
+      ]
+    },
+    "ADA_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "be83b1aba7c92811ca6e3a3232f0f8782c6e61c272d2a1f7e32074b9d3892579",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "AVAX_USDT": {
+      "t0": 1600754400000,
+      "last_open_time": 1791846000000,
+      "rows": 53063,
+      "missing_hours": 19,
+      "sha256": "044152b57fc255e25215f667635fce57dec5be162b44af39f3af958b4d8cb6d1",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "BNB_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "ab8e206ee2ea3a468c60e030e152ea5ca59f9cf3ac2ab2feacc096c13ebd1a65",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "DOGE_USDT": {
+      "t0": 1562328000000,
+      "last_open_time": 1791846000000,
+      "rows": 63713,
+      "missing_hours": 43,
+      "sha256": "ab4ea44a622626033c53fc0c5427f8dd325ddd00329197eda1aaa98ce0f387a9",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "LINK_USDT": {
+      "t0": 1547632800000,
+      "last_open_time": 1791846000000,
+      "rows": 67779,
+      "missing_hours": 59,
+      "sha256": "affad8e4c06a8501dc804c07ad220e1d40e4c2716fb8ccae0858a88a1b9a2368",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "LTC_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "497e018a9f3426b7f2dc0e439e675a5d355df44788ab9043549b52db7648e18f",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "SOL_USDT": {
+      "t0": 1597125600000,
+      "last_open_time": 1791846000000,
+      "rows": 54071,
+      "missing_hours": 19,
+      "sha256": "2f4e7791bbf79d9fed41eeba853a72ad53f367404543bedddf5302172fbc5bc7",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    },
+    "XRP_USDT": {
+      "t0": 1546300800000,
+      "last_open_time": 1791846000000,
+      "rows": 68149,
+      "missing_hours": 59,
+      "sha256": "dd1c10ae8accc4a028bdeef6571ab1f59311fafeaf407a59310952fcb3c71fe7",
+      "sources": [
+        "var/alpha/early_1h.db",
+        "var/alpha/alts_1h.db"
+      ]
+    }
+  },
+  "precedence": "early archive wins duplicate timestamps, same as parent",
+  "fingerprint_format": "h6b_clo259.row_fingerprint over per-symbol hourly grid including missing rows; alignment must retain these rows",
+  "historical_evaluations": 0,
+  "new_trials": 0,
+  "evaluation_sentinels_created": 0,
+  "half_spread_bps": 5,
+  "spread_basis": "frozen registered fallback; no measured historical spread"
+}

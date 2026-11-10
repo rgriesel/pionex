@@ -1,0 +1,91 @@
+{
+  "issue": "CLO-259",
+  "at_sast": "2026-11-10T03:57:46.480065+02:00",
+  "state": "SYNTHETIC_PREPARATION_ONLY_NOT_RUN",
+  "trial_id": 173,
+  "historical_evaluations": 0,
+  "new_trials": 0,
+  "evaluation_sentinels_created": 0,
+  "performance_verdict": null,
+  "spec_sha256": "bef1e6277584f4a7985760cbeb30a6213b6631cf5df282248af470197c13f873",
+  "trial": {
+    "id": 173,
+    "ref": "CLO-256:H6b:v1",
+    "evaluation_state": "NOT_RUN",
+    "result": "PREREGISTERED NOT RUN; dependency: implementation, evidence and gate confirmation",
+    "weight": 1
+  },
+  "code_sha256": "8e3f0d10b8aa1638572ea8a88c3a2ac3392d784b42e3a37b5eeb8a087074adf4",
+  "synthetic_tests": 20,
+  "main_suite": {
+    "tests": 622,
+    "errors": 1,
+    "skipped": 1,
+    "known_error": "test_read_only_uri_encodes_awkward_paths: WinError 123; documented FIRM_RULES exception",
+    "seconds": 203.833
+  },
+  "skill_suite": {
+    "tests": 12,
+    "errors": 0
+  },
+  "coverage_columns": [
+    "scenario",
+    "current_test",
+    "observed_result",
+    "remaining_gap"
+  ],
+  "coverage": [
+    [
+      "strict-through, delayed submission, expiry",
+      "FillChecks.test_touch_and_subtick_do_not_fill_submission_extremes_ignored / test_fourth_bar_fill_and_fifth_bar_expiry",
+      "PASS",
+      "Candle model cannot establish queue or post-only acceptance"
+    ],
+    [
+      "stop/TP ambiguity and adverse gaps",
+      "FillChecks.test_ambiguous_stop_precedes_tp_both_sides / test_adverse_fill_open_and_later_gap_never_improve_price",
+      "PASS",
+      "Intrabar fill time unknown; containing hour reserved"
+    ],
+    [
+      "missing pending/held inventory",
+      "FillChecks.test_unknown_pending_or_inventory_halts_coin",
+      "PASS",
+      "Unresolved coin halts; eventual evaluation must report unresolved inventory"
+    ],
+    [
+      "frozen geometry and costs",
+      "FillChecks.test_delayed_fill_full_notional_and_frozen_geometry_both_sides / test_costs_all_friction_stressed_funding_unchanged",
+      "PASS",
+      "Spot PROXY; fees and contract rules are current, not historical"
+    ],
+    [
+      "gate refusal and duplicate/interrupted attempts",
+      "HarnessChecks (5 synthetic tests)",
+      "PASS",
+      "Caller must independently verify board comment authorship and scope before registry authorization"
+    ],
+    [
+      "row identity and incomplete lookbacks",
+      "FillChecks.test_validation_and_fingerprints / test_missing_lookback_and_submission_do_not_fill",
+      "PASS",
+      "Future historical loader must verify the frozen manifest and cutoff before callback"
+    ]
+  ],
+  "input_manifest": "var/reports/clo259_input_fingerprints_2026-11-10.json",
+  "existing_public_evidence": "var/reports/clo259_readiness_2026-11-10.json",
+  "half_spread_bps": 5,
+  "dependency": "CLO-253: board confirmation of inherited frozen gates and one adaptive historical evaluation of trial 173",
+  "status": "backlog",
+  "remaining_before_evaluation": [
+    "Verify board-authored authorization scope and update existing reservation only after confirmation",
+    "Wire frozen cutoff/manifest-verified historical loader and existing parent metrics to guarded harness; no executable historical entry point is provided in this preparation",
+    "Refresh current public evidence if stale; future quote-based forward evidence separately registered before promotion"
+  ],
+  "no_strategy_log_performance_row": "No historical evaluation or verdict; existing NOT RUN queue record remains authoritative",
+  "quota_openai": {
+    "five_hour_used_percent": 14,
+    "weekly_used_percent": 48
+  },
+  "spec_byte_preservation": "Original CRLF registration added byte-for-byte; file-specific -text attribute prevents checkout normalization. SHA256 unchanged."
+}

@@ -130,3 +130,10 @@ Specs frozen in `pionex_lab/research/own_edge_clo247.py` at 23:31:28 SAST; gates
 | Date | Idea / data | Hold | Result | State |
 |---|---|---|---|---|
 | 2026-11-08 | H5b confirmed failed-compression breakout fade; existing trial 172; synthetic OHLC fixtures only, planned BTC/ETH Binance PROXY unchanged | Fixed 96h maximum | 19 synthetic checks cover causal confirmation, 1x fills, long/short stop gaps, TP, missing data, funding and 2x/3x/4x friction; no historical returns calculated | PREPARATION ONLY / NOT RUN; inherited screen-gate confirmation and explicit evaluation authorization remain dependencies. Details: docs/status/clo-258-synthetic-readiness-2026-11-08.md; readiness JSON var/reports/clo258_synthetic_readiness_2026-11-08.json. Eventual PASS requires separate Red Team review, maxReviewRounds 2 |
+
+
+## CLO-289 data feasibility (2026-11-11; no strategy trial)
+
+| Date | Idea / data | Hold | Result | Verdict |
+|---|---|---|---|---|
+| 2026-11-11 | Free Uniswap V3 Ethereum WETH-USDC fee500 complete range book; no returns or trial | n/a | Identity verified; dRPC historical state and109 pool logs/100blocks available; reconstruction stopped at516 requests/45.812s,484/694 bitmap words successful, HTTP429. No complete snapshot or reconciliation. `var/reports/clo289_summary.json`; `docs/status/clo-289-uniswap-feasibility-2026-11-11.md` | **INSUFFICIENT (data feasibility only)**. WHY: rate-limited initial book; archive depth, ordered daily stream and exact pool reconciliation unproven. WHAT: complete bounded free reads with exact gross/net replay and deadline evidence. NEXT: separate unrun one-worker checkpointed100-word multicall feasibility pilot. No strategy registration permitted by this issue; CEO may assign follow-up. |
